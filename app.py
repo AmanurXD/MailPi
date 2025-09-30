@@ -1,14 +1,17 @@
-# app.py - Rocket Speed & HTML Views UPGRADE
+# app.py - Rocket Speed & HTML Views UPGRADE (Fully Patched)
+
+# CRITICAL FIX 1: EVENTLET MONKEY PATCH MUST BE FIRST
+import eventlet 
+eventlet.monkey_patch() 
+# ---------------------------------------------------
+
 import os
 import json
 import re 
 from flask import Flask, request, jsonify, abort, render_template
-# --- NEW IMPORTS ---
-from flask_socketio import SocketIO, emit, join_room 
-from mailparser import MailParser # Use MailParser instead of EmailParser
-import eventlet # IMPORT THIS FIRST
-eventlet.monkey_patch() # THEN CALL THE PATCH
-# -------------------
+from flask_socketio import SocketIO, emit, join_room
+# Corrected library usage: MailParser is the class, mailparser is the library
+from mailparser import MailParser 
 from datetime import datetime, timedelta
 import secrets
 from redis import Redis
@@ -60,17 +63,12 @@ except Exception as e:
 ADDRESSES_KEY = "addresses"
 MESSAGES_PREFIX = "messages:" 
 
-# --- Helpers (MODIFIED: Added OTP Extractor) ---
+# --- Helpers (OTP Extractor remains the same) ---
 def extract_otp(raw_email_content):
     """Intelligently extracts potential OTPs/verification codes."""
     patterns = [
-        # Pattern 1: Keywords followed by 5-8 Alphanumeric (e.g., code: ERNXAS)
         r'(?:code|otp|pin|token|is)[:\s]*([A-Z0-9]{5,8})',
-        
-        # Pattern 2: Standalone 4-8 digits (purely numeric OTP)
         r'(\b\d{4,8}\b)',
-        
-        # Pattern 3: 6 uppercase letters (e.g., Twilio code)
         r'([A-Z]{6}\b)'
     ]
     
@@ -92,44 +90,44 @@ def generate_address(alias=None):
     redis_client.hset(ADDRESSES_KEY, addr, expires_iso)
     return addr, expires_iso
 
-# --- Helpers (MODIFIED: Parsing and Emitting) ---
+# --- Helpers (MODIFIED: Parsing FIX) ---
 def store_message(to_address, from_addr, subject, raw):
     if not redis_client.hexists(ADDRESSES_KEY, to_address):
         print(f"[Webhook] Received mail for unknown/expired address: {to_address}")
     
-    # --- FIX: Use safer from_string constructor and check raw content ---
-    parsed_email = None
+    # --- FIX 3: Correct MailParser Initialization and Fallback ---
+    html_body = "No HTML content found."
+    text_body = "No plain text content found."
+    otp_code = extract_otp(raw)
+    
     try:
-        # Check if we have raw content to parse
         if raw and raw.strip():
             # Use the safer from_string method
             parser = MailParser.from_string(raw)
-            # MailParser's internal message object might still be None if parsing fails
-            if parser.message:
-                 parsed_email = parser
-        
-        if not parsed_email:
-             raise ValueError("Raw email content was empty or failed to initialize parser.")
-
+            
+            if parser and parser.body:
+                # Extract the body parts safely
+                html_body = parser.body.get('html', [html_body])[0]
+                text_body = parser.body.get('plain', [text_body])[0]
+                
+                # Optional: Fallback to plain text if HTML is empty
+                if not html_body and text_body:
+                     html_body = f'<pre>{text_body}</pre>'
+            
     except Exception as e:
         print(f"[ERROR] Failed to parse email: {e}")
-        # Fallback object to ensure subsequent code doesn't crash
-        parsed_email = type('ParsedEmail', (object,), {
-            'html_body': f'Failed to parse HTML: {e}', 
-            'text_body': f'Failed to parse text: {e}'
-        })()
+        # Ensure error message is explicitly stored if parsing fails
+        text_body = f"ERROR: Failed to parse raw content. Details: {e}"
+        html_body = f'<h1>Error parsing email content!</h1><pre>{e}</pre>'
         
-    otp_code = extract_otp(raw)
-
     message_data = {
         "from": from_addr,
         "subject": subject,
         "raw": raw,
         "received_at": datetime.utcnow().isoformat(),
         
-        # Use safe attribute access or fallback
-        "html_body": getattr(parsed_email, 'html_body', 'No HTML body found.'),
-        "text_body": getattr(parsed_email, 'text_body', 'No plain text body found.'),
+        "html_body": html_body,
+        "text_body": text_body,
         "otp": otp_code
     }
     
@@ -144,16 +142,13 @@ def store_message(to_address, from_addr, subject, raw):
         "subject": subject,
         "otp": otp_code,
         "received_at": message_data["received_at"],
-        "id": 1 # Assume new mail gets ID 1 until client refreshes list
+        "id": 1 # Placeholder ID; client will re-fetch list for correct ID sequence
     }
-    # Emit to a room specific to the email address
     socketio.emit('new_mail', mini_msg, room=to_address)
 # ------------------------------------------------
 
 
-# --- SOCKETIO EVENT HANDLERS ---
-from flask_socketio import join_room # Ensure join_room is imported
-
+# --- SOCKETIO EVENT HANDLERS (No changes needed) ---
 @socketio.on('join_mailbox')
 def on_join(data):
     """Allows client to join a specific room named after the mailbox address."""
@@ -162,7 +157,8 @@ def on_join(data):
         join_room(mailbox_address)
         print(f"Client {request.sid} joined room: {mailbox_address}")
 
-# --- API endpoints (MODIFIED: api_get for full content) ---
+
+# --- API endpoints ---
 
 @app.route("/", methods=["GET"])
 def home():
@@ -175,7 +171,7 @@ def api_generate():
     addr, expires_at = generate_address(alias)
     return jsonify({"address": addr, "expires_at": expires_at})
 
-# MODIFIED api_get to return full parsed bodies
+# MODIFIED api_get (No changes needed here, uses fixed data from Redis)
 @app.route("/get", methods=["GET"])
 def api_get():
     email = request.args.get("address")
@@ -196,12 +192,11 @@ def api_get():
                 "from": msg.get("from"),
                 "subject": msg.get("subject"),
                 
-                # Full parsed content for the two-view system!
+                # Data fields rely on the fixed store_message
                 "html_body": msg.get("html_body", "No HTML content found."), 
                 "text_body": msg.get("text_body", "No plain text content found."),
                 "otp": msg.get("otp"),
                 
-                # Raw content/JSON view option
                 "raw_json": msg 
             })
             
@@ -210,7 +205,7 @@ def api_get():
             
     return jsonify(messages)
 
-# MODIFIED api_webhook to use store_message and emit
+# MODIFIED api_webhook (No changes needed, uses fixed store_message)
 @app.route("/webhook", methods=["POST"])
 def api_webhook():
     data = request.get_json(force=True, silent=True) 
@@ -225,7 +220,6 @@ def api_webhook():
         print(f"[Webhook] Missing 'to' field in data: {data}")
         return jsonify({"error": "Missing 'to' field"}), 400
     
-    # Use the new store_message that handles parsing and emitting
     store_message(to_addr, from_addr, subject, raw)
     print(f"[Webhook] Saved email to {to_addr} from {from_addr}")
     return jsonify({"status": "success"})
@@ -239,15 +233,16 @@ def api_delete():
     redis_client.delete(f"{MESSAGES_PREFIX}{email}")
     return jsonify({"status": "deleted", "address": email})
 
+# MODIFIED api_list_addresses (FIX 2: Removed unnecessary decode)
 @app.route("/addresses", methods=["GET"])
 def api_list_addresses():
     all_addresses = redis_client.hgetall(ADDRESSES_KEY)
     addresses_list = []
     for addr, expires_at in all_addresses.items():
+        # FIX: Removed .decode() because decode_responses=True is set
         addresses_list.append({"address": addr, "created_at": None, "expires_at": expires_at}) 
     addresses_list.sort(key=lambda x: x['expires_at'], reverse=True)
     return jsonify(addresses_list)
 
 # The run block is removed. 
-# Use Gunicorn for production: gunicorn --worker-class eventlet -w 1 app:app
-# Or for SocketIO: python your_app_runner.py (if you use app.run with socketio.run)
+# Render Start Command: gunicorn --worker-class eventlet -w 1 app:app
