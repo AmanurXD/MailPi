@@ -10,7 +10,7 @@ app = Flask(__name__)
 DB_PATH = "mailbox.db"
 STORAGE = Path("mail_storage")
 STORAGE.mkdir(exist_ok=True)
-SUBDOMAIN = "org.codewithjames.top"
+SUBDOMAIN = "codewithjames.top"
 ADDRESS_TTL_DAYS = 14  # default TTL
 
 # --- DB initialization ---
