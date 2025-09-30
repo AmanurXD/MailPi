@@ -63,19 +63,31 @@ except Exception as e:
 ADDRESSES_KEY = "addresses"
 MESSAGES_PREFIX = "messages:" 
 
-# --- Helpers (OTP Extractor remains the same) ---
+# --- Helpers (MODIFIED: OTP Accuracy Fix) ---
 def extract_otp(raw_email_content):
-    """Intelligently extracts potential OTPs/verification codes."""
+    """Intelligently extracts potential OTPs/verification codes with focus on body."""
+    
+    # CRITICAL: We need a way to ignore the headers and only search the body.
+    # The mailparser object is the best way to get the body, but it's failing.
+    # As a fallback, we will assume the message body starts after the last two blank lines in headers.
+    
+    body_match = re.search(r'\r\n\r\n(.+)$', raw_email_content, re.DOTALL)
+    content_to_search = body_match.group(1).upper() if body_match else raw_email_content.upper()
+    
     patterns = [
+        # Pattern 1: Keywords followed by 5-8 Alphanumeric (most targeted)
         r'(?:code|otp|pin|token|is)[:\s]*([A-Z0-9]{5,8})',
-        r'(\b\d{4,8}\b)',
-        r'([A-Z]{6}\b)'
+        
+        # Pattern 2: 6 uppercase letters (Twilio code)
+        r'([A-Z]{6}\b)',
+
+        # Pattern 3: Standalone 4-8 digits (purely numeric OTP, least preferred)
+        r'(\b\d{4,8}\b)'
     ]
     
-    content = raw_email_content.upper()
-    
     for pattern in patterns:
-        match = re.search(pattern, content)
+        # Search only the extracted body or the whole content if body wasn't separated
+        match = re.search(pattern, content_to_search) 
         if match:
             return match.group(1).strip()
             
@@ -90,35 +102,38 @@ def generate_address(alias=None):
     redis_client.hset(ADDRESSES_KEY, addr, expires_iso)
     return addr, expires_iso
 
-# --- Helpers (MODIFIED: Parsing FIX) ---
+# --- Helpers (MODIFIED: Parsing Stability Fix) ---
 def store_message(to_address, from_addr, subject, raw):
     if not redis_client.hexists(ADDRESSES_KEY, to_address):
         print(f"[Webhook] Received mail for unknown/expired address: {to_address}")
     
-    # --- FIX 3: Correct MailParser Initialization and Fallback ---
     html_body = "No HTML content found."
     text_body = "No plain text content found."
-    otp_code = extract_otp(raw)
-    
+    otp_code = None # Initialize OTP here, set after parsing attempt
+
     try:
         if raw and raw.strip():
-            # Use the safer from_string method
             parser = MailParser.from_string(raw)
             
-            if parser and parser.body:
-                # Extract the body parts safely
+            # CRITICAL FIX 1: Check if parser.body is a dictionary before using .get()
+            if parser and isinstance(parser.body, dict):
+                # Safely extract body parts
                 html_body = parser.body.get('html', [html_body])[0]
                 text_body = parser.body.get('plain', [text_body])[0]
                 
-                # Optional: Fallback to plain text if HTML is empty
+                # Fallback: Prefer plain text if HTML is empty
                 if not html_body and text_body:
                      html_body = f'<pre>{text_body}</pre>'
+
+            # Perform OTP extraction using the raw content
+            otp_code = extract_otp(raw)
             
     except Exception as e:
-        print(f"[ERROR] Failed to parse email: {e}")
-        # Ensure error message is explicitly stored if parsing fails
-        text_body = f"ERROR: Failed to parse raw content. Details: {e}"
-        html_body = f'<h1>Error parsing email content!</h1><pre>{e}</pre>'
+        error_msg = f"'{e}'"
+        print(f"[ERROR] Failed to parse email: {error_msg}")
+        # Ensure error messages are stored safely
+        text_body = f"ERROR: Failed to parse raw content. Details: {error_msg}"
+        html_body = f'<h1>Error parsing email content!</h1><pre>{error_msg}</pre>'
         
     message_data = {
         "from": from_addr,
@@ -128,21 +143,21 @@ def store_message(to_address, from_addr, subject, raw):
         
         "html_body": html_body,
         "text_body": text_body,
-        "otp": otp_code
+        "otp": otp_code # Use the extracted OTP
     }
     
     # 1. Store the full message in Redis
     redis_client.lpush(f"{MESSAGES_PREFIX}{to_address}", json.dumps(message_data))
     redis_client.ltrim(f"{MESSAGES_PREFIX}{to_address}", 0, 99)
     
-    # 2. Emit SocketIO event for instant update (ROCKET SPEED)
+    # 2. Emit SocketIO event for instant update
     mini_msg = {
         "address": to_address,
         "from": from_addr,
         "subject": subject,
         "otp": otp_code,
         "received_at": message_data["received_at"],
-        "id": 1 # Placeholder ID; client will re-fetch list for correct ID sequence
+        "id": 1 
     }
     socketio.emit('new_mail', mini_msg, room=to_address)
 # ------------------------------------------------
