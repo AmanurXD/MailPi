@@ -6,11 +6,14 @@
     <title>Disposable Mailbox | James</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js"></script>
     <style>
         /* Modern Scrollbar for Aesthetics */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-thumb { background-color: #4a5568; border-radius: 4px; }
         ::-webkit-scrollbar-track { background-color: #1a202c; }
+        /* iframe reset for HTML content */
+        .html-viewer { border: none; width: 100%; height: 100%; }
     </style>
     <script>
         tailwind.config = { darkMode: 'class' }
@@ -125,8 +128,30 @@
                         </button>
                     </div>
 
-                    <h4 class="text-lg font-semibold border-b border-gray-700 pb-1 mt-4">Raw Content (Summary)</h4>
-                    <pre class="whitespace-pre-wrap font-mono text-xs bg-gray-900 p-3 rounded-md overflow-x-auto text-gray-300" x-text="selectedMessage.raw_content_summary"></pre>
+                    <div class="flex space-x-4 border-b border-gray-700 pb-2">
+                        <button @click="viewMode = 'html'" :class="{'bg-blue-600': viewMode === 'html'}"
+                            class="py-1 px-3 rounded text-sm bg-gray-600 hover:bg-blue-700 transition">HTML View</button>
+                        <button @click="viewMode = 'text'" :class="{'bg-blue-600': viewMode === 'text'}"
+                            class="py-1 px-3 rounded text-sm bg-gray-600 hover:bg-blue-700 transition">Text View</button>
+                        <button @click="viewMode = 'json'" :class="{'bg-blue-600': viewMode === 'json'}"
+                            class="py-1 px-3 rounded text-sm bg-gray-600 hover:bg-blue-700 transition">Raw JSON</button>
+                    </div>
+                    
+                    <div class="h-96 relative">
+                        <iframe x-show="viewMode === 'html'" :srcdoc="selectedMessage.html_body"
+                            class="html-viewer bg-white rounded-md border border-gray-600 absolute inset-0"></iframe>
+                        
+                        <pre x-show="viewMode === 'text'"
+                            class="whitespace-pre-wrap font-mono text-sm bg-gray-900 p-3 rounded-md overflow-y-auto text-gray-300 absolute inset-0">
+                            <span x-text="selectedMessage.text_body"></span>
+                        </pre>
+                        
+                        <pre x-show="viewMode === 'json'"
+                            class="whitespace-pre-wrap font-mono text-xs bg-gray-900 p-3 rounded-md overflow-y-auto text-gray-300 absolute inset-0">
+                            <span x-text="JSON.stringify(selectedMessage.raw_json, null, 2)"></span>
+                        </pre>
+                    </div>
+
                 </div>
             </div>
 
@@ -145,13 +170,39 @@
                 showHistory: false,
                 selectedMessage: null,
                 copied: false,
+                viewMode: 'html', // Default view mode
+                socket: null, // SocketIO object
 
                 init() {
-                    // Load history and fetch messages on startup
                     this.loadHistory();
                     if (this.currentAddress) {
                         this.fetchMessages();
+                        this.initSocket(); // Initialize socket only if address is active
                     }
+                },
+
+                initSocket() {
+                    // Initialize socket connection
+                    this.socket = io({ transports: ['websocket', 'polling'] }); 
+
+                    // Listen for successful connection
+                    this.socket.on('connect', () => {
+                        console.log('Socket connected. Joining room: ' + this.currentAddress);
+                        // Join room immediately after connecting
+                        this.socket.emit('join_mailbox', { address: this.currentAddress }); 
+                    });
+
+                    // Listen for new mail event (ROCKET SPEED)
+                    this.socket.on('new_mail', (message) => {
+                        if (message.address === this.currentAddress) {
+                            // Prepend the new mini-message to the list
+                            this.messages.unshift(message);
+                            // If no message is selected, select the new one instantly
+                            if (!this.selectedMessage) {
+                                this.selectMessage(message); 
+                            }
+                        }
+                    });
                 },
 
                 async loadHistory() {
@@ -169,6 +220,13 @@
                     localStorage.setItem('activeMailbox', address);
                     this.fetchMessages();
                     this.showHistory = false;
+                    
+                    // Join the new mailbox room via socket
+                    if (this.socket) {
+                         this.socket.emit('join_mailbox', { address: address });
+                    } else {
+                         this.initSocket();
+                    }
                 },
 
                 async generateAddress() {
@@ -189,6 +247,14 @@
                             this.aliasInput = data.address.split('@')[0];
                             this.loadHistory(); // Refresh history list
                             this.fetchMessages();
+                            
+                            // Join the new mailbox room via socket
+                            if (this.socket) {
+                                this.socket.emit('join_mailbox', { address: data.address });
+                            } else {
+                                this.initSocket(); // Initialize if not already done
+                            }
+
                         } else {
                             alert('Error generating address: ' + (data.error || 'Unknown error'));
                         }
@@ -204,9 +270,19 @@
                 async fetchMessages() {
                     if (!this.currentAddress) return;
                     this.loading = true;
+                    this.messages = []; // Clear current list before fetching
                     try {
                         const response = await fetch(`/get?address=${this.currentAddress}`);
-                        this.messages = await response.json();
+                        const fetchedMessages = await response.json();
+                        
+                        // Replace the entire message list with the fully fetched data
+                        this.messages = fetchedMessages;
+                        
+                        // If a message was selected, try to re-select the full version
+                        if (this.selectedMessage) {
+                            this.selectedMessage = fetchedMessages.find(m => m.id === this.selectedMessage.id) || null;
+                        }
+
                     } catch (e) {
                         alert('Error fetching messages.');
                         console.error(e);
@@ -215,8 +291,18 @@
                     }
                 },
 
-                selectMessage(message) {
-                    this.selectedMessage = message;
+                async selectMessage(message) {
+                    // Check if the message is a mini-message (pushed via socket) lacking full body
+                    if (!message.html_body) {
+                         // ROCKET SPEED is for notification; fast updates require a full fetch
+                         await this.fetchMessages();
+                         // Find the full message in the updated list using the ID
+                         this.selectedMessage = this.messages.find(m => m.id === message.id);
+                    } else {
+                        // Message already has full body (from initial fetch)
+                        this.selectedMessage = message;
+                    }
+                    this.viewMode = 'html'; // Always default to HTML view when selecting a new message
                 },
 
                 copyAddress() {
