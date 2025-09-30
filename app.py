@@ -27,23 +27,36 @@ if not REDIS_URL or not REDIS_TOKEN:
 ADDRESS_TTL_DAYS = 14  # default TTL
 
 # Initialize Redis client 
+redis_client = None # Initialize to None
+
+# Initialize Redis client 
 # Using the standard 'redis' client's arguments, which usually works with Upstash
 try:
-    # Use decoded password for the standard redis-py client
-    # If using the standard 'redis' library:
-    redis_client = Redis.from_url(
-        url=f"redis://default:{REDIS_TOKEN}@{REDIS_URL.split('://')[1]}", # Construct redis://default:<token>@host:port
-        decode_responses=True # Optional, but simplifies list/hash fetching
-    )
+    # 1. Strip the 'https://' part and build the proper 'rediss://' URL (Redis secure)
+    # The URL should look like: rediss://default:<TOKEN>@host:port
     
-    # If the above fails, try the simplest URL format that includes the password:
-    # redis_client = Redis.from_url(REDIS_URL, password=REDIS_TOKEN)
+    # We'll use the specific port 6379, which Upstash often uses for TLS/REDIS, 
+    # even if it's not explicit in the ENV var. 
+    # The split will get the host:port part, typically just the host in this case.
+    redis_host = REDIS_URL.split('://')[1]
+    
+    # Use from_url which is the most stable way for complex URLs
+    redis_client = Redis.from_url(
+        url=f"rediss://default:{REDIS_TOKEN}@{redis_host}",
+        decode_responses=True,
+        # **CRITICAL FIX**: Enforce SSL/TLS connection
+        ssl_cert_reqs=None 
+    )
     
     redis_client.ping()
     print("[INFO] Successfully connected to Upstash Redis.")
+except RedisConnectionError as e:
+    print(f"[ERROR] Could not connect to Redis (Connection Error): {e}")
+    # Halt deployment if the database connection fails
+    exit(1) 
 except Exception as e:
-    print(f"[ERROR] Could not connect to Redis: {e}")
-    # Consider raising an exception here to halt deployment if connection fails.
+    print(f"[ERROR] Could not connect to Redis (General Error): {e}")
+    exit(1)
 
 
 # --- Constants & Key Definitions ---
