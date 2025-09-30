@@ -1,4 +1,4 @@
-# app.py - FINAL, STABLE, ROCKET-FAST VERSION
+# app.py - FINAL, STABLE, ROCKET-FAST VERSION (V3 - Reputation Patches)
 # CRITICAL FIX 1: EVENTLET MONKEY PATCH MUST BE FIRST
 import eventlet 
 eventlet.monkey_patch() 
@@ -16,6 +16,17 @@ from redis import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
 
 app = Flask(__name__)
+
+# --- NEW: HEADER AND SECURITY FIXES ---
+@app.after_request
+def add_security_headers(response):
+    # Enforce non-caching for real-time data integrity
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    # Security header (prevent clickjacking in iframes/HTML view)
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN' 
+    return response
+# -------------------------------------
 
 # --- SOCKETIO INITIALIZATION ---
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet') 
@@ -47,20 +58,15 @@ except Exception as e:
 ADDRESSES_KEY = "addresses"
 MESSAGES_PREFIX = "messages:" 
 
-# --- Helpers (FIX 3: OTP Accuracy) ---
+# --- Helpers (OTP Accuracy) ---
 def extract_otp(raw_email_content):
     """Intelligently extracts potential OTPs/verification codes with strict boundaries."""
     
     content_to_search = raw_email_content.upper()
     
     patterns = [
-        # Pattern 1: Keywords followed by 5-8 Alphanumeric (stricter)
         r'(?:CODE|OTP|PIN|TOKEN|IS)[:\s]*\b([A-Z0-9]{5,8})\b',
-        
-        # Pattern 2: 6 uppercase letters (Twilio code, with strict boundaries)
         r'\b([A-Z]{6})\b',
-
-        # Pattern 3: Standalone 4-8 digits (purely numeric OTP, strict boundaries)
         r'\b(\d{4,8})\b'
     ]
     
@@ -80,7 +86,7 @@ def generate_address(alias=None):
     redis_client.hset(ADDRESSES_KEY, addr, expires_iso)
     return addr, expires_iso
 
-# --- Helpers (FIX 2: Parsing Stability) ---
+# --- Helpers (Reputation and Parsing Stability FIX) ---
 def store_message(to_address, from_addr, subject, raw):
     if not redis_client.hexists(ADDRESSES_KEY, to_address):
         print(f"[Webhook] Received mail for unknown/expired address: {to_address}")
@@ -89,13 +95,24 @@ def store_message(to_address, from_addr, subject, raw):
     text_body = "No plain text content found."
     otp_code = None
     
+    # NEW: Capture full sender identity
+    full_sender_identity = from_addr 
+    
     try:
         if raw and raw.strip():
             parser = MailParser.from_string(raw)
             
-            # CRITICAL FIX 2: Use simple text_html/text_plain attributes
+            # FIX: Use simple text_html/text_plain attributes
             html_body = parser.text_html if parser.text_html else html_body
             text_body = parser.text_plain if parser.text_plain else text_body
+            
+            # Reputation Fix: Get the full friendly "From" field
+            if parser.from_ and isinstance(parser.from_, list) and parser.from_[0]:
+                # parser.from_ gives [(friendly_name, email), ...]
+                # We need to reconstruct the full string, e.g., "Twilio <no-reply@twilio.com>"
+                name = parser.from_[0][0]
+                email = parser.from_[0][1]
+                full_sender_identity = f"{name} <{email}>" if name else email
             
             # Fallback: If no HTML, wrap plain text in <pre> tags
             if html_body == "No HTML content found." and text_body != "No plain text content found.":
@@ -106,12 +123,11 @@ def store_message(to_address, from_addr, subject, raw):
     except Exception as e:
         error_msg = f"'{e}'"
         print(f"[ERROR] Failed to parse email: {error_msg}")
-        # Store safe error messages
         text_body = f"ERROR: Failed to parse raw content. Details: {error_msg}"
         html_body = f'<h1>Error parsing email content!</h1><pre>{error_msg}</pre>'
         
     message_data = {
-        "from": from_addr,
+        "from": full_sender_identity, # Store the full, friendly identity
         "subject": subject,
         "raw": raw,
         "received_at": datetime.utcnow().isoformat(),
@@ -127,7 +143,7 @@ def store_message(to_address, from_addr, subject, raw):
     # 2. Emit SocketIO event for instant update (ROCKET SPEED)
     mini_msg = {
         "address": to_address,
-        "from": from_addr,
+        "from": full_sender_identity, # Emit the full, friendly identity
         "subject": subject,
         "otp": otp_code,
         "received_at": message_data["received_at"],
@@ -146,7 +162,8 @@ def on_join(data):
         print(f"Client {request.sid} joined room: {mailbox_address}")
 
 
-# --- API endpoints (FIX 1: Background processing for webhook) ---
+# --- API endpoints (FIXED) ---
+
 @app.route("/", methods=["GET"])
 def home():
     return render_template("index.html")
@@ -173,7 +190,7 @@ def api_get():
                 "id": len(messages_json) - i, 
                 "address": email,
                 "received_at": msg.get("received_at"),
-                "from": msg.get("from"),
+                "from": msg.get("from"), # This now contains the friendly name
                 "subject": msg.get("subject"),
                 "html_body": msg.get("html_body", "No HTML content found."), 
                 "text_body": msg.get("text_body", "No plain text content found."),
@@ -200,11 +217,9 @@ def api_webhook():
         print(f"[Webhook] Missing 'to' field in data: {data}")
         return jsonify({"error": "Missing 'to' field"}), 400
     
-    # Fix: Start background task for Redis/MailParser blocking ops
     socketio.start_background_task(store_message, to_addr, from_addr, subject, raw)
     
     print(f"[Webhook] Received mail to {to_addr} (processing in background)")
-    # Return 200 immediately
     return jsonify({"status": "success", "message": "processing in background"}), 200
 
 @app.route("/delete", methods=["POST"])
