@@ -30,8 +30,15 @@ ADDRESS_TTL_DAYS = 14  # default TTL
 # Using the standard 'redis' client's arguments, which usually works with Upstash
 try:
     # Use decoded password for the standard redis-py client
-    redis_client = Redis(url=REDIS_URL, password=REDIS_TOKEN)
-    # Simple check to ensure connection is live
+    # If using the standard 'redis' library:
+    redis_client = Redis.from_url(
+        url=f"redis://default:{REDIS_TOKEN}@{REDIS_URL.split('://')[1]}", # Construct redis://default:<token>@host:port
+        decode_responses=True # Optional, but simplifies list/hash fetching
+    )
+    
+    # If the above fails, try the simplest URL format that includes the password:
+    # redis_client = Redis.from_url(REDIS_URL, password=REDIS_TOKEN)
+    
     redis_client.ping()
     print("[INFO] Successfully connected to Upstash Redis.")
 except Exception as e:
