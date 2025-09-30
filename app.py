@@ -1,14 +1,16 @@
 # app.py - Finalized for Render/Upstash Redis
 import os
 import json
-from flask import Flask, request, jsonify, abort
+import re # Needed for OTP extraction
+from flask import Flask, request, jsonify, abort, render_template # ADDED render_template
 from datetime import datetime, timedelta
 import secrets
+from redis import Redis
+from redis.exceptions import ConnectionError as RedisConnectionError
 # Using the standard 'redis' client for flexibility, assuming upstash_redis is installed
 # If you are using the 'upstash_redis' package, the import should be:
 # from upstash_redis import Redis
 # But for maximum compatibility, let's stick to using environment vars which the client often auto-handles.
-from redis import Redis 
 
 app = Flask(__name__)
 
@@ -28,6 +30,11 @@ ADDRESS_TTL_DAYS = 14  # default TTL
 
 # Initialize Redis client 
 redis_client = None # Initialize to None
+
+@app.route("/", methods=["GET"])
+def home():
+    """Renders the main single-page application (the inbox UI)."""
+    return render_template("index.html")
 
 # Initialize Redis client 
 # Using the standard 'redis' client's arguments, which usually works with Upstash
