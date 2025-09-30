@@ -1,3 +1,6 @@
 Flask
 gunicorn
 redis
+Flask-SocketIO
+eventlet
+email-parser
