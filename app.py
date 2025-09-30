@@ -5,7 +5,7 @@ from flask import Flask, request, jsonify, abort
 from datetime import datetime, timedelta
 import secrets
 # Import the Redis client library
-from redis import Redis
+from upstash_redis import Redis
 
 app = Flask(__name__)
 
