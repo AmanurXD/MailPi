@@ -6,6 +6,8 @@ from flask import Flask, request, jsonify, abort, render_template
 # --- NEW IMPORTS ---
 from flask_socketio import SocketIO, emit, join_room 
 from mailparser import MailParser # Use MailParser instead of EmailParser
+import eventlet # IMPORT THIS FIRST
+eventlet.monkey_patch() # THEN CALL THE PATCH
 # -------------------
 from datetime import datetime, timedelta
 import secrets
@@ -95,13 +97,27 @@ def store_message(to_address, from_addr, subject, raw):
     if not redis_client.hexists(ADDRESSES_KEY, to_address):
         print(f"[Webhook] Received mail for unknown/expired address: {to_address}")
     
-    # --- NEW: Parse Raw Email ---
-    parser = MailParser()
+    # --- FIX: Use safer from_string constructor and check raw content ---
+    parsed_email = None
     try:
-        parsed_email = parser.parse(raw)
+        # Check if we have raw content to parse
+        if raw and raw.strip():
+            # Use the safer from_string method
+            parser = MailParser.from_string(raw)
+            # MailParser's internal message object might still be None if parsing fails
+            if parser.message:
+                 parsed_email = parser
+        
+        if not parsed_email:
+             raise ValueError("Raw email content was empty or failed to initialize parser.")
+
     except Exception as e:
         print(f"[ERROR] Failed to parse email: {e}")
-        parsed_email = type('ParsedEmail', (object,), {'html_body': 'Failed to parse HTML.', 'text_body': 'Failed to parse text.'})() # Fallback object
+        # Fallback object to ensure subsequent code doesn't crash
+        parsed_email = type('ParsedEmail', (object,), {
+            'html_body': f'Failed to parse HTML: {e}', 
+            'text_body': f'Failed to parse text: {e}'
+        })()
         
     otp_code = extract_otp(raw)
 
@@ -110,9 +126,10 @@ def store_message(to_address, from_addr, subject, raw):
         "subject": subject,
         "raw": raw,
         "received_at": datetime.utcnow().isoformat(),
-        # --- NEW: Store Parsed Content ---
-        "html_body": parsed_email.html_body,
-        "text_body": parsed_email.text_body,
+        
+        # Use safe attribute access or fallback
+        "html_body": getattr(parsed_email, 'html_body', 'No HTML body found.'),
+        "text_body": getattr(parsed_email, 'text_body', 'No plain text body found.'),
         "otp": otp_code
     }
     
@@ -226,9 +243,7 @@ def api_delete():
 def api_list_addresses():
     all_addresses = redis_client.hgetall(ADDRESSES_KEY)
     addresses_list = []
-    for addr_bytes, expires_bytes in all_addresses.items():
-        addr = addr_bytes.decode('utf-8')
-        expires_at = expires_bytes.decode('utf-8')
+    for addr, expires_at in all_addresses.items():
         addresses_list.append({"address": addr, "created_at": None, "expires_at": expires_at}) 
     addresses_list.sort(key=lambda x: x['expires_at'], reverse=True)
     return jsonify(addresses_list)
