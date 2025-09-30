@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Disposable Mailbox | James</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        /* Modern Scrollbar for Aesthetics */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-thumb { background-color: #4a5568; border-radius: 4px; }
+        ::-webkit-scrollbar-track { background-color: #1a202c; }
+    </style>
+    <script>
+        tailwind.config = { darkMode: 'class' }
+    </script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen" x-data="mailApp()">
+
+    <div class="container mx-auto p-4 md:p-8">
+        
+        <header class="mb-8 text-center">
+            <h1 class="text-4xl font-extrabold text-blue-400">Temp Mail Hub &nbsp;<span class="text-xl text-gray-400">by James</span></h1>
+            <p class="text-gray-500 mt-1">Disposable, Rocket-Fast, and Secure.</p>
+        </header>
+
+        <div class="bg-gray-800 p-4 rounded-lg shadow-xl mb-6 flex flex-wrap items-center space-y-4 md:space-y-0 md:space-x-4">
+            <input x-model="aliasInput" type="text" placeholder="Enter custom alias or leave blank..." 
+                   class="flex-grow p-3 rounded-md bg-gray-700 text-white border border-gray-600 focus:ring-blue-500 focus:border-blue-500 w-full md:w-auto">
+            
+            <button @click="generateAddress" 
+                    :disabled="loading"
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-md transition duration-200 disabled:bg-gray-500 w-full md:w-auto">
+                <span x-show="!loading">Generate / Load Mailbox</span>
+                <span x-show="loading">Loading...</span>
+            </button>
+            
+            <button @click="fetchMessages" 
+                    :disabled="!currentAddress || loading"
+                    class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-md transition duration-200 disabled:bg-gray-500 w-full md:w-auto">
+                <span x-show="!loading">Refresh Inbox</span>
+                <span x-show="loading">Refreshing...</span>
+            </button>
+
+            <button @click="toggleHistory" 
+                    class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-6 rounded-md transition duration-200 w-full md:w-auto">
+                History
+            </button>
+        </div>
+
+        <div x-show="currentAddress" class="bg-gray-700 p-4 rounded-lg shadow-inner mb-6">
+            <h3 class="text-lg font-medium text-gray-300">Active Address:</h3>
+            <p class="text-xl font-mono text-blue-400 flex items-center justify-between">
+                <span x-text="currentAddress"></span>
+                <button @click="copyAddress" class="text-sm text-gray-400 hover:text-white transition duration-150">
+                    <span x-show="!copied">Copy</span>
+                    <span x-show="copied" class="text-green-400">Copied!</span>
+                </button>
+            </p>
+        </div>
+
+        <div x-show="showHistory" class="bg-gray-800 p-4 rounded-lg shadow-xl mb-6 max-h-64 overflow-y-auto">
+            <h3 class="text-xl font-semibold mb-3 text-blue-400 flex justify-between items-center">
+                Mailbox History
+                <button @click="showHistory = false" class="text-gray-400 hover:text-white">&times;</button>
+            </h3>
+            <ul class="space-y-2">
+                <template x-for="item in history" :key="item.address">
+                    <li @click="loadFromHistory(item.address)"
+                        :class="{'bg-gray-700': item.address === currentAddress}"
+                        class="p-2 rounded-md hover:bg-gray-600 cursor-pointer transition duration-150 flex justify-between items-center text-sm font-mono">
+                        <span x-text="item.address"></span>
+                        <span class="text-xs text-gray-400" x-text="'Expires: ' + new Date(item.expires_at).toLocaleDateString()"></span>
+                    </li>
+                </template>
+                <p x-show="!history.length" class="text-gray-500 italic">No history yet. Generate an address!</p>
+            </ul>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            <div class="md:col-span-1 bg-gray-800 rounded-lg shadow-xl overflow-hidden max-h-[70vh] flex flex-col">
+                <h2 class="text-xl font-semibold p-4 border-b border-gray-700 bg-gray-700">Inbox (<span x-text="messages.length"></span>)</h2>
+                
+                <div x-show="messages.length === 0 && !loading" class="p-4 text-gray-400 italic text-center">
+                    No messages yet. Send an email to <span class="font-mono text-blue-400" x-text="currentAddress"></span>
+                </div>
+
+                <div class="flex-grow overflow-y-auto">
+                    <template x-for="message in messages" :key="message.id">
+                        <div @click="selectMessage(message)" 
+                            :class="{'bg-gray-700 border-l-4 border-blue-500': selectedMessage && selectedMessage.id === message.id}"
+                            class="p-4 border-b border-gray-700 hover:bg-gray-700 cursor-pointer transition duration-150">
+                            <p class="font-bold text-sm" x-text="message.subject"></p>
+                            <p class="text-xs text-gray-400" x-text="'From: ' + message.from"></p>
+                            <p x-show="message.otp" class="text-xs font-mono text-yellow-400 mt-1">OTP: <span x-text="message.otp"></span></p>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <div class="md:col-span-2 bg-gray-800 rounded-lg shadow-xl overflow-hidden max-h-[70vh] flex flex-col">
+                <h2 class="text-xl font-semibold p-4 border-b border-gray-700 bg-gray-700">
+                    <span x-show="selectedMessage">Message Viewer</span>
+                    <span x-show="!selectedMessage" class="text-gray-400">Select a message</span>
+                </h2>
+                
+                <div x-show="!selectedMessage" class="flex-grow flex items-center justify-center text-gray-500 italic">
+                    <p>Select an email from the list to view its contents.</p>
+                </div>
+
+                <div x-show="selectedMessage" class="flex-grow overflow-y-auto p-6 space-y-4">
+                    <div class="bg-gray-700 p-4 rounded-lg border-l-4 border-blue-500">
+                        <p class="text-2xl font-bold mb-2" x-text="selectedMessage.subject"></p>
+                        <p class="text-sm text-gray-400">**From:** <span x-text="selectedMessage.from"></span></p>
+                        <p class="text-sm text-gray-400">**To:** <span x-text="selectedMessage.address"></span></p>
+                        <p class="text-sm text-gray-400">**Received:** <span x-text="new Date(selectedMessage.received_at).toLocaleString()"></span></p>
+                    </div>
+
+                    <div x-show="selectedMessage.otp" class="bg-yellow-900 bg-opacity-30 p-4 rounded-lg border border-yellow-500 flex justify-between items-center">
+                        <span class="text-xl font-mono text-yellow-400">OTP Code: <span class="font-extrabold" x-text="selectedMessage.otp"></span></span>
+                        <button @click="copyOTP(selectedMessage.otp)" class="text-sm bg-yellow-600 hover:bg-yellow-700 py-1 px-3 rounded text-white transition duration-150">
+                            Copy OTP
+                        </button>
+                    </div>
+
+                    <h4 class="text-lg font-semibold border-b border-gray-700 pb-1 mt-4">Raw Content (Summary)</h4>
+                    <pre class="whitespace-pre-wrap font-mono text-xs bg-gray-900 p-3 rounded-md overflow-x-auto text-gray-300" x-text="selectedMessage.raw_content_summary"></pre>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        function mailApp() {
+            return {
+                aliasInput: '',
+                currentAddress: localStorage.getItem('activeMailbox') || '',
+                loading: false,
+                messages: [],
+                history: [],
+                showHistory: false,
+                selectedMessage: null,
+                copied: false,
+
+                init() {
+                    // Load history and fetch messages on startup
+                    this.loadHistory();
+                    if (this.currentAddress) {
+                        this.fetchMessages();
+                    }
+                },
+
+                async loadHistory() {
+                    try {
+                        const response = await fetch('/addresses');
+                        this.history = await response.json();
+                    } catch (e) {
+                        console.error("Could not load history:", e);
+                    }
+                },
+
+                loadFromHistory(address) {
+                    this.aliasInput = address.split('@')[0];
+                    this.currentAddress = address;
+                    localStorage.setItem('activeMailbox', address);
+                    this.fetchMessages();
+                    this.showHistory = false;
+                },
+
+                async generateAddress() {
+                    this.loading = true;
+                    this.selectedMessage = null;
+                    try {
+                        let url = '/generate';
+                        if (this.aliasInput) {
+                            url += `?alias=${this.aliasInput}`;
+                        }
+                        
+                        const response = await fetch(url);
+                        const data = await response.json();
+
+                        if (data.address) {
+                            this.currentAddress = data.address;
+                            localStorage.setItem('activeMailbox', data.address);
+                            this.aliasInput = data.address.split('@')[0];
+                            this.loadHistory(); // Refresh history list
+                            this.fetchMessages();
+                        } else {
+                            alert('Error generating address: ' + (data.error || 'Unknown error'));
+                        }
+
+                    } catch (e) {
+                        alert('Network error. Check server logs.');
+                        console.error(e);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async fetchMessages() {
+                    if (!this.currentAddress) return;
+                    this.loading = true;
+                    try {
+                        const response = await fetch(`/get?address=${this.currentAddress}`);
+                        this.messages = await response.json();
+                    } catch (e) {
+                        alert('Error fetching messages.');
+                        console.error(e);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                selectMessage(message) {
+                    this.selectedMessage = message;
+                },
+
+                copyAddress() {
+                    navigator.clipboard.writeText(this.currentAddress);
+                    this.copied = true;
+                    setTimeout(() => this.copied = false, 1500);
+                },
+                
+                copyOTP(otp) {
+                    navigator.clipboard.writeText(otp);
+                    alert('OTP copied: ' + otp);
+                },
+
+                toggleHistory() {
+                    this.showHistory = !this.showHistory;
+                }
+            }
+        }
+    </script>
+</body>
+</html>
