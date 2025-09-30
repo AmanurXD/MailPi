@@ -5,7 +5,7 @@ import re
 from flask import Flask, request, jsonify, abort, render_template
 # --- NEW IMPORTS ---
 from flask_socketio import SocketIO, emit, join_room 
-from email_parser import EmailParser # Ensure 'email-parser' is installed
+from mailparser import MailParser # Use MailParser instead of EmailParser
 # -------------------
 from datetime import datetime, timedelta
 import secrets
