@@ -96,7 +96,7 @@ def store_message(to_address, from_addr, subject, raw):
         print(f"[Webhook] Received mail for unknown/expired address: {to_address}")
     
     # --- NEW: Parse Raw Email ---
-    parser = EmailParser()
+    parser = MailParser()
     try:
         parsed_email = parser.parse(raw)
     except Exception as e:
