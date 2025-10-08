@@ -68,54 +68,121 @@ def generate_address(alias=None):
     redis_client.hset(ADDRESSES_KEY, addr, expires_iso)
     return addr, expires_iso
 
+
+
+
+
+
+
+# Place this new function above your store_message function
+def extract_email_details(html_body, text_body):
+    """
+    Parses email content to extract OTPs (numeric and mixed-alphanumeric),
+    lists of potential numeric codes, and all hyperlinks.
+    """
+    # Combine HTML and text for a comprehensive search space
+    content_to_search = f"{html_body} {text_body}"
+    
+    # --- 1. Link Extraction ---
+    # A robust regex to find all http/https links.
+    link_pattern = r'https?://[^\s"\'<>]+'
+    links = re.findall(link_pattern, content_to_search)
+    # Remove duplicates while preserving order
+    unique_links = sorted(list(set(links)), key=links.index) if links else []
+
+    # --- 2. OTP and Code Extraction ---
+    # We search the uppercase version to simplify regex patterns
+    search_upper = content_to_search.upper()
+
+    # Pattern for numeric codes (4 to 8 digits). \b ensures we match whole numbers.
+    numeric_pattern = r'\b(\d{4,8})\b'
+    all_numeric_codes = re.findall(numeric_pattern, search_upper)
+
+    # Pattern for mixed alphanumeric codes (5-8 chars, must contain at least one letter).
+    # This avoids capturing purely numeric codes again.
+    # (?=.*[A-Z]) is a "positive lookahead" that asserts a letter must exist.
+    mixed_pattern = r'\b(?=.*[A-Z])[A-Z0-9]{5,8}\b'
+    all_mixed_codes = re.findall(mixed_pattern, search_upper)
+
+    # --- 3. Assigning the final attributes ---
+    otp_digit = all_numeric_codes[0] if all_numeric_codes else None
+    otp_mix = all_mixed_codes[0] if all_mixed_codes else None
+    otp_lists = all_numeric_codes if all_numeric_codes else []
+
+    return {
+        "otp_digit": otp_digit,
+        "otp_mix": otp_mix,
+        "otp_lists": otp_lists,
+        "links": unique_links
+    }
+
+
+# Replace your existing store_message function with this new version
 def store_message(to_address, from_addr, subject, raw):
     if not redis_client.hexists(ADDRESSES_KEY, to_address):
         print(f"[Webhook] Received mail for unknown/expired address: {to_address}")
         return # Stop processing for unknown addresses
 
-    html_body, text_body, otp_code, full_sender_identity = "No HTML content found.", "No plain text content found.", None, from_addr
+    html_body, text_body, full_sender_identity = "No HTML content found.", "No plain text content found.", from_addr
     try:
         if raw and raw.strip():
             parser = MailParser.from_string(raw)
-            html_body = parser.text_html if parser.text_html else html_body
-            text_body = parser.text_plain if parser.text_plain else text_body
+            html_body = parser.text_html[0] if parser.text_html else html_body
+            text_body = parser.text_plain[0] if parser.text_plain else text_body
             if parser.from_ and isinstance(parser.from_, list) and parser.from_[0]:
                 name, email = parser.from_[0][0], parser.from_[0][1]
                 full_sender_identity = f"{name} <{email}>" if name else email
             if html_body == "No HTML content found." and text_body != "No plain text content found.":
                  html_body = f'<pre>{text_body}</pre>'
-            otp_code = extract_otp(raw)
     except Exception as e:
         error_msg = f"'{e}'"
         print(f"[ERROR] Failed to parse email: {error_msg}")
         text_body = f"ERROR: Failed to parse raw content. Details: {error_msg}"
         html_body = f'<h1>Error parsing email content!</h1><pre>{error_msg}</pre>'
 
-    # Generate a more stable message ID based on timestamp and a random part
+    # Generate a more stable message ID
     message_id = f"{datetime.utcnow().timestamp()}-{secrets.token_hex(2)}"
+
+    # Call our new super extractor!
+    extracted_data = extract_email_details(html_body, text_body)
 
     message_data = {
         "id": message_id,
         "from": full_sender_identity,
         "subject": subject,
-        "raw": raw, # Storing raw might be heavy, consider removing if not needed for API
         "received_at": datetime.utcnow().isoformat(),
         "html_body": html_body,
         "text_body": text_body,
-        "otp": otp_code
     }
+    # Cleanly merge the extracted data into our message object
+    message_data.update(extracted_data)
+    
     redis_client.lpush(f"{MESSAGES_PREFIX}{to_address}", json.dumps(message_data))
     redis_client.ltrim(f"{MESSAGES_PREFIX}{to_address}", 0, 99)
 
+    # Emit a richer real-time event for the frontend
     mini_msg = {
         "id": message_id,
         "address": to_address,
         "from": full_sender_identity,
         "subject": subject,
-        "otp": otp_code,
         "received_at": message_data["received_at"],
+        "otp_digit": extracted_data["otp_digit"], # Add new fields to socket event
+        "otp_mix": extracted_data["otp_mix"]
     }
     socketio.emit('new_mail', mini_msg, room=to_address)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 #####################################################################
@@ -168,7 +235,10 @@ def get_messages_for_address(email):
                 "from": msg.get("from"),
                 "subject": msg.get("subject"),
                 "received_at": msg.get("received_at"),
-                "otp": msg.get("otp"),
+                # Add our new, powerful fields to the summary!
+                "otp_digit": msg.get("otp_digit"),
+                "otp_mix": msg.get("otp_mix"),
+                "has_links": bool(msg.get("links")) # A boolean flag is useful here
             })
         except (json.JSONDecodeError, KeyError):
             continue
