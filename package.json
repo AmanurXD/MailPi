@@ -1,0 +1,22 @@
+{
+  "name": "mailpi-api",
+  "version": "1.0.0",
+  "description": "A disposable email API with real-time updates and AI-powered OTP extraction using Puter.js.",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "AmanurXD",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "ioredis": "^5.4.1",
+    "mailparser": "^3.7.1",
+    "nanoid": "^5.0.7",
+    "puppeteer": "^22.10.0",
+    "socket.io": "^4.7.5"
+  }
+}
