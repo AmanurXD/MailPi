@@ -1,8 +1,6 @@
 Flask
-Flask-SocketIO
-redis
-mail-parser
-eventlet
 gunicorn
-requests
-Flask-Limiter
+redis
+Flask-SocketIO
+eventlet
+mail-parser
