@@ -8,9 +8,11 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js"></script>
     <style>
+        /* Modern Scrollbar for Aesthetics */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-thumb { background-color: #4a5568; border-radius: 4px; }
         ::-webkit-scrollbar-track { background-color: #1a202c; }
+        /* iframe reset for HTML content */
         .html-viewer { border: none; width: 100%; height: 100%; }
     </style>
     <script>
@@ -30,17 +32,24 @@
             <input x-model="aliasInput" type="text" placeholder="Enter custom alias or leave blank..." 
                    class="flex-grow p-3 rounded-md bg-gray-700 text-white border border-gray-600 focus:ring-blue-500 focus:border-blue-500 w-full md:w-auto">
             
-            <button @click="generateAddress" :disabled="loading" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-md transition duration-200 disabled:bg-gray-500 w-full md:w-auto">
+            <button @click="generateAddress" 
+                    :disabled="loading"
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-md transition duration-200 disabled:bg-gray-500 w-full md:w-auto">
                 <span x-show="!loading">Generate / Load Mailbox</span>
                 <span x-show="loading">Loading...</span>
             </button>
             
-            <button @click="refreshInbox" :disabled="!currentAddress || loading" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-md transition duration-200 disabled:bg-gray-500 w-full md:w-auto">
+            <button @click="fetchMessages" 
+                    :disabled="!currentAddress || loading"
+                    class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-md transition duration-200 disabled:bg-gray-500 w-full md:w-auto">
                 <span x-show="!loading">Refresh Inbox</span>
                 <span x-show="loading">Refreshing...</span>
             </button>
 
-            <button @click="toggleHistory" class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-6 rounded-md transition duration-200 w-full md:w-auto">History</button>
+            <button @click="toggleHistory" 
+                    class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-6 rounded-md transition duration-200 w-full md:w-auto">
+                History
+            </button>
         </div>
 
         <div x-show="currentAddress" class="bg-gray-700 p-4 rounded-lg shadow-inner mb-6">
@@ -61,7 +70,9 @@
             </h3>
             <ul class="space-y-2">
                 <template x-for="item in history" :key="item.address">
-                    <li @click="loadFromHistory(item.address)" :class="{'bg-gray-700': item.address === currentAddress}" class="p-2 rounded-md hover:bg-gray-600 cursor-pointer transition duration-150 flex justify-between items-center text-sm font-mono">
+                    <li @click="loadFromHistory(item.address)"
+                        :class="{'bg-gray-700': item.address === currentAddress}"
+                        class="p-2 rounded-md hover:bg-gray-600 cursor-pointer transition duration-150 flex justify-between items-center text-sm font-mono">
                         <span x-text="item.address"></span>
                         <span class="text-xs text-gray-400" x-text="'Expires: ' + new Date(item.expires_at).toLocaleDateString()"></span>
                     </li>
@@ -74,17 +85,19 @@
             
             <div class="md:col-span-1 bg-gray-800 rounded-lg shadow-xl overflow-hidden max-h-[70vh] flex flex-col">
                 <h2 class="text-xl font-semibold p-4 border-b border-gray-700 bg-gray-700">Inbox (<span x-text="messages.length"></span>)</h2>
+                
                 <div x-show="messages.length === 0 && !loading" class="p-4 text-gray-400 italic text-center">
                     No messages yet. Send an email to <span class="font-mono text-blue-400" x-text="currentAddress"></span>
                 </div>
+
                 <div class="flex-grow overflow-y-auto">
                     <template x-for="message in messages" :key="message.id">
-                        <div @click="selectMessage(message)" :class="{'bg-gray-700 border-l-4 border-blue-500': selectedMessage && selectedMessage.id === message.id}" class="p-4 border-b border-gray-700 hover:bg-gray-700 cursor-pointer transition duration-150">
+                        <div @click="selectMessage(message)" 
+                            :class="{'bg-gray-700 border-l-4 border-blue-500': selectedMessage && selectedMessage.id === message.id}"
+                            class="p-4 border-b border-gray-700 hover:bg-gray-700 cursor-pointer transition duration-150">
                             <p class="font-bold text-sm" x-text="message.subject"></p>
                             <p class="text-xs text-gray-400" x-text="'From: ' + message.from"></p>
-                            <p x-show="message.otp_digit || message.otp_mix" class="text-xs font-mono text-yellow-400 mt-1">
-                                OTP: <span x-text="message.otp_digit || message.otp_mix"></span>
-                            </p>
+                            <p x-show="message.otp" class="text-xs font-mono text-yellow-400 mt-1">OTP: <span x-text="message.otp"></span></p>
                         </div>
                     </template>
                 </div>
@@ -93,186 +106,221 @@
             <div class="md:col-span-2 bg-gray-800 rounded-lg shadow-xl overflow-hidden max-h-[70vh] flex flex-col">
                 <h2 class="text-xl font-semibold p-4 border-b border-gray-700 bg-gray-700">
                     <span x-show="selectedMessage">Message Viewer</span>
-                    <span x-show="!selectedMessage">Select a message</span>
+                    <span x-show="!selectedMessage" class="text-gray-400">Select a message</span>
                 </h2>
                 
                 <div x-show="!selectedMessage" class="flex-grow flex items-center justify-center text-gray-500 italic">
                     <p>Select an email from the list to view its contents.</p>
                 </div>
-                
-                <template x-if="selectedMessage">
-                    <div class="flex-grow overflow-y-auto p-6 space-y-4">
-                        <div class="bg-gray-700 p-4 rounded-lg border-l-4 border-blue-500">
-                            <p class="text-2xl font-bold mb-2" x-text="selectedMessage.subject"></p>
-                            <p class="text-sm text-gray-400">**From:** <span x-text="selectedMessage.from"></span></p>
-                            <p class="text-sm text-gray-400">**To:** <span x-text="currentAddress"></span></p>
-                            <p class="text-sm text-gray-400">**Received:** <span x-text="new Date(selectedMessage.received_at).toLocaleString()"></span></p>
-                        </div>
 
-                        <div x-show="selectedMessage.otp_digit || selectedMessage.otp_mix" class="bg-yellow-900 bg-opacity-30 p-4 rounded-lg border border-yellow-500 flex justify-between items-center">
-                            <span class="text-xl font-mono text-yellow-400">OTP Code: <span class="font-extrabold" x-text="selectedMessage.otp_digit || selectedMessage.otp_mix"></span></span>
-                            <button @click="copyOTP(selectedMessage.otp_digit || selectedMessage.otp_mix)" class="text-sm bg-yellow-600 hover:bg-yellow-700 py-1 px-3 rounded text-white transition duration-150">Copy OTP</button>
-                        </div>
-
-                        <div class="flex space-x-4 border-b border-gray-700 pb-2">
-                            <button @click="viewMode = 'html'" :class="{'bg-blue-600': viewMode === 'html'}" class="py-1 px-3 rounded text-sm bg-gray-600 hover:bg-blue-700 transition">HTML View</button>
-                            <button @click="viewMode = 'text'" :class="{'bg-blue-600': viewMode === 'text'}" class="py-1 px-3 rounded text-sm bg-gray-600 hover:bg-blue-700 transition">Text View</button>
-                            <button @click="viewMode = 'json'" :class="{'bg-blue-600': viewMode === 'json'}" class="py-1 px-3 rounded text-sm bg-gray-600 hover:bg-blue-700 transition">Raw JSON</button>
-                        </div>
-                        
-                        <div class="h-96 relative">
-                            <iframe x-show="viewMode === 'html'" :srcdoc="selectedMessage.html_body" class="html-viewer bg-white rounded-md border border-gray-600 absolute inset-0"></iframe>
-                            <pre x-show="viewMode === 'text'" class="whitespace-pre-wrap font-mono text-sm bg-gray-900 p-3 rounded-md overflow-y-auto text-gray-300 absolute inset-0"><span x-text="selectedMessage.text_body"></span></pre>
-                            <pre x-show="viewMode === 'json'" class="whitespace-pre-wrap font-mono text-xs bg-gray-900 p-3 rounded-md overflow-y-auto text-gray-300 absolute inset-0"><span x-text="JSON.stringify(selectedMessage, null, 2)"></span></pre>
-                        </div>
+                <div x-show="selectedMessage" class="flex-grow overflow-y-auto p-6 space-y-4">
+                    <div class="bg-gray-700 p-4 rounded-lg border-l-4 border-blue-500">
+                        <p class="text-2xl font-bold mb-2" x-text="selectedMessage.subject"></p>
+                        <p class="text-sm text-gray-400">**From:** <span x-text="selectedMessage.from"></span></p>
+                        <p class="text-sm text-gray-400">**To:** <span x-text="selectedMessage.address"></span></p>
+                        <p class="text-sm text-gray-400">**Received:** <span x-text="new Date(selectedMessage.received_at).toLocaleString()"></span></p>
                     </div>
-                </template>
+
+                    <div x-show="selectedMessage.otp" class="bg-yellow-900 bg-opacity-30 p-4 rounded-lg border border-yellow-500 flex justify-between items-center">
+                        <span class="text-xl font-mono text-yellow-400">OTP Code: <span class="font-extrabold" x-text="selectedMessage.otp"></span></span>
+                        <button @click="copyOTP(selectedMessage.otp)" class="text-sm bg-yellow-600 hover:bg-yellow-700 py-1 px-3 rounded text-white transition duration-150">
+                            Copy OTP
+                        </button>
+                    </div>
+
+                    <div class="flex space-x-4 border-b border-gray-700 pb-2">
+                        <button @click="viewMode = 'html'" :class="{'bg-blue-600': viewMode === 'html'}"
+                            class="py-1 px-3 rounded text-sm bg-gray-600 hover:bg-blue-700 transition">HTML View</button>
+                        <button @click="viewMode = 'text'" :class="{'bg-blue-600': viewMode === 'text'}"
+                            class="py-1 px-3 rounded text-sm bg-gray-600 hover:bg-blue-700 transition">Text View</button>
+                        <button @click="viewMode = 'json'" :class="{'bg-blue-600': viewMode === 'json'}"
+                            class="py-1 px-3 rounded text-sm bg-gray-600 hover:bg-blue-700 transition">Raw JSON</button>
+                    </div>
+                    
+                    <div class="h-96 relative">
+                        <iframe x-show="viewMode === 'html'" :srcdoc="selectedMessage.html_body"
+                            class="html-viewer bg-white rounded-md border border-gray-600 absolute inset-0"></iframe>
+                        
+                        <pre x-show="viewMode === 'text'"
+                            class="whitespace-pre-wrap font-mono text-sm bg-gray-900 p-3 rounded-md overflow-y-auto text-gray-300 absolute inset-0">
+                            <span x-text="selectedMessage.text_body"></span>
+                        </pre>
+                        
+                        <pre x-show="viewMode === 'json'"
+                            class="whitespace-pre-wrap font-mono text-xs bg-gray-900 p-3 rounded-md overflow-y-auto text-gray-300 absolute inset-0">
+                            <span x-text="JSON.stringify(selectedMessage.raw_json, null, 2)"></span>
+                        </pre>
+                    </div>
+
+                </div>
             </div>
+
         </div>
+
     </div>
 
     <script>
-    function mailApp() {
-        return {
-            apiKey: 'kiola645', // <-- YOUR API KEY GOES HERE
-            aliasInput: '',
-            currentAddress: localStorage.getItem('activeMailbox') || '',
-            loading: false,
-            messages: [],
-            history: [],
-            showHistory: false,
-            selectedMessage: null,
-            copied: false,
-            viewMode: 'html',
-            socket: null,
+        function mailApp() {
+            return {
+                aliasInput: '',
+                currentAddress: localStorage.getItem('activeMailbox') || '',
+                loading: false,
+                messages: [],
+                history: [],
+                showHistory: false,
+                selectedMessage: null,
+                copied: false,
+                viewMode: 'html', // Default view mode
+                socket: null, // SocketIO object
 
-            getApiHeaders() {
-                return {
-                    'Content-Type': 'application/json',
-                    'X-API-Key': this.apiKey
-                };
-            },
-
-            init() {
-                this.loadHistory();
-                if (this.currentAddress) {
-                    this.fetchMessageSummaries();
-                    this.initSocket(); 
-                }
-            },
-
-            initSocket() {
-                this.socket = io({ transports: ['websocket', 'polling'] });
-                this.socket.on('connect', () => {
-                    console.log('Socket connected. Joining room: ' + this.currentAddress);
+                init() {
+                    this.loadHistory();
                     if (this.currentAddress) {
+                        this.fetchMessages();
+                        this.initSocket(); // Initialize socket only if address is active
+                    }
+                },
+
+                initSocket() {
+                    // Initialize socket connection
+                    this.socket = io({ transports: ['websocket', 'polling'] }); 
+
+                    // Listen for successful connection
+                    this.socket.on('connect', () => {
+                        console.log('Socket connected. Joining room: ' + this.currentAddress);
+                        // Join room immediately after connecting
                         this.socket.emit('join_mailbox', { address: this.currentAddress }); 
+                    });
+
+                    // Listen for new mail event (ROCKET SPEED)
+                    this.socket.on('new_mail', (message) => {
+                        if (message.address === this.currentAddress) {
+                            // Prepend the new mini-message to the list
+                            this.messages.unshift(message);
+                            // If no message is selected, select the new one instantly
+                            if (!this.selectedMessage) {
+                                this.selectMessage(message); 
+                            }
+                        }
+                    });
+                },
+
+                async loadHistory() {
+                    try {
+                        const response = await fetch('/addresses');
+                        this.history = await response.json();
+                    } catch (e) {
+                        console.error("Could not load history:", e);
                     }
-                });
-                this.socket.on('new_mail', (message) => {
-                    if (message.address === this.currentAddress) {
-                        this.messages.unshift(message);
+                },
+
+                loadFromHistory(address) {
+                    this.aliasInput = address.split('@')[0];
+                    this.currentAddress = address;
+                    localStorage.setItem('activeMailbox', address);
+                    this.fetchMessages();
+                    this.showHistory = false;
+                    
+                    // Join the new mailbox room via socket
+                    if (this.socket) {
+                         this.socket.emit('join_mailbox', { address: address });
+                    } else {
+                         this.initSocket();
                     }
-                });
-            },
+                },
 
-            async loadHistory() {
-                try {
-                    const response = await fetch('/addresses');
-                    this.history = await response.json();
-                } catch (e) { console.error("Could not load history:", e); }
-            },
-
-            loadFromHistory(address) {
-                this.aliasInput = address.split('@')[0];
-                this.currentAddress = address;
-                localStorage.setItem('activeMailbox', address);
-                this.selectedMessage = null;
-                this.fetchMessageSummaries();
-                this.showHistory = false;
-                if (this.socket && this.socket.connected) {
-                    this.socket.emit('join_mailbox', { address: address });
-                } else { this.initSocket(); }
-            },
-
-            async generateAddress() {
-                this.loading = true;
-                this.selectedMessage = null;
-                try {
-                    const response = await fetch('/api/v1/addresses', {
-                        method: 'POST',
-                        headers: this.getApiHeaders(),
-                        body: JSON.stringify({ alias: this.aliasInput || null })
-                    });
-                    const data = await response.json();
-                    if (!response.ok) throw new Error(data.error || 'Failed to generate address.');
-                    this.currentAddress = data.address;
-                    localStorage.setItem('activeMailbox', data.address);
-                    this.aliasInput = data.address.split('@')[0];
-                    this.loadHistory(); 
-                    this.fetchMessageSummaries();
-                    if (this.socket && this.socket.connected) {
-                        this.socket.emit('join_mailbox', { address: data.address });
-                    } else { this.initSocket(); }
-                } catch (e) {
-                    alert('Error generating address: ' + e.message);
-                    console.error(e);
-                } finally { this.loading = false; }
-            },
-
-            async fetchMessageSummaries() {
-                if (!this.currentAddress) return;
-                this.loading = true;
-                this.messages = [];
-                this.selectedMessage = null;
-                try {
-                    const response = await fetch(`/api/v1/addresses/${this.currentAddress}/messages`, {
-                        headers: this.getApiHeaders()
-                    });
-                    if (!response.ok) throw new Error(`API responded with status ${response.status}`);
-                    this.messages = await response.json();
-                } catch (e) {
-                    alert('Error fetching messages: ' + e.message);
-                    console.error(e);
-                } finally { this.loading = false; }
-            },
-
-            async selectMessage(messageSummary) {
-                if (this.loading) return;
-                if (this.selectedMessage && this.selectedMessage.id === messageSummary.id) return;
-            
-                this.loading = true;
-                this.selectedMessage = { ...messageSummary, html_body: '<p>Loading full message...</p>', text_body: 'Loading...' };
-                try {
-                    const response = await fetch(`/api/v1/messages/${this.currentAddress}/${messageSummary.id}`, {
-                        headers: this.getApiHeaders()
-                    });
-                    if (!response.ok) throw new Error(`API responded with status ${response.status}`);
-                    this.selectedMessage = await response.json();
-                    this.viewMode = 'html';
-                } catch (e) {
-                    alert('Error fetching full message: ' + e.message);
+                async generateAddress() {
+                    this.loading = true;
                     this.selectedMessage = null;
-                    console.error(e);
-                } finally { this.loading = false; }
-            },
+                    try {
+                        let url = '/generate';
+                        if (this.aliasInput) {
+                            url += `?alias=${this.aliasInput}`;
+                        }
+                        
+                        const response = await fetch(url);
+                        const data = await response.json();
 
-            copyAddress() {
-                navigator.clipboard.writeText(this.currentAddress);
-                this.copied = true;
-                setTimeout(() => this.copied = false, 1500);
-            },
-            
-            copyOTP(otp) {
-                if (!otp) return;
-                navigator.clipboard.writeText(otp);
-                alert('OTP copied: ' + otp);
-            },
+                        if (data.address) {
+                            this.currentAddress = data.address;
+                            localStorage.setItem('activeMailbox', data.address);
+                            this.aliasInput = data.address.split('@')[0];
+                            this.loadHistory(); // Refresh history list
+                            this.fetchMessages();
+                            
+                            // Join the new mailbox room via socket
+                            if (this.socket) {
+                                this.socket.emit('join_mailbox', { address: data.address });
+                            } else {
+                                this.initSocket(); // Initialize if not already done
+                            }
 
-            toggleHistory() { this.showHistory = !this.showHistory; },
-            refreshInbox() { this.fetchMessageSummaries(); }
+                        } else {
+                            alert('Error generating address: ' + (data.error || 'Unknown error'));
+                        }
+
+                    } catch (e) {
+                        alert('Network error. Check server logs.');
+                        console.error(e);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async fetchMessages() {
+                    if (!this.currentAddress) return;
+                    this.loading = true;
+                    this.messages = []; // Clear current list before fetching
+                    try {
+                        const response = await fetch(`/get?address=${this.currentAddress}`);
+                        const fetchedMessages = await response.json();
+                        
+                        // Replace the entire message list with the fully fetched data
+                        this.messages = fetchedMessages;
+                        
+                        // If a message was selected, try to re-select the full version
+                        if (this.selectedMessage) {
+                            this.selectedMessage = fetchedMessages.find(m => m.id === this.selectedMessage.id) || null;
+                        }
+
+                    } catch (e) {
+                        alert('Error fetching messages.');
+                        console.error(e);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async selectMessage(message) {
+                    // Check if the message is a mini-message (pushed via socket) lacking full body
+                    if (!message.html_body) {
+                         // ROCKET SPEED is for notification; fast updates require a full fetch
+                         await this.fetchMessages();
+                         // Find the full message in the updated list using the ID
+                         this.selectedMessage = this.messages.find(m => m.id === message.id);
+                    } else {
+                        // Message already has full body (from initial fetch)
+                        this.selectedMessage = message;
+                    }
+                    this.viewMode = 'html'; // Always default to HTML view when selecting a new message
+                },
+
+                copyAddress() {
+                    navigator.clipboard.writeText(this.currentAddress);
+                    this.copied = true;
+                    setTimeout(() => this.copied = false, 1500);
+                },
+                
+                copyOTP(otp) {
+                    navigator.clipboard.writeText(otp);
+                    alert('OTP copied: ' + otp);
+                },
+
+                toggleHistory() {
+                    this.showHistory = !this.showHistory;
+                }
+            }
         }
-    }
     </script>
 </body>
 </html>
