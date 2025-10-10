@@ -134,7 +134,7 @@
     <script>
     function mailApp() {
         return {
-            apiKey: 'kiola645', // <-- I Know You're Gonna Be Here , But Do Whatever You can , God won't let you enter jannah if you abuse the system
+            apiKey: 'kiola645', // <-- YOUR API KEY GOES HERE
             aliasInput: '',
             currentAddress: localStorage.getItem('activeMailbox') || '',
             loading: false,
@@ -146,6 +146,13 @@
             viewMode: 'html',
             socket: null,
 
+            getApiHeaders() {
+                return {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': this.apiKey
+                };
+            },
+
             init() {
                 this.loadHistory();
                 if (this.currentAddress) {
@@ -155,7 +162,7 @@
             },
 
             initSocket() {
-                this.socket = io({ transports: ['websocket', 'polling'] }); 
+                this.socket = io({ transports: ['websocket', 'polling'] });
                 this.socket.on('connect', () => {
                     console.log('Socket connected. Joining room: ' + this.currentAddress);
                     if (this.currentAddress) {
@@ -192,20 +199,18 @@
                 this.loading = true;
                 this.selectedMessage = null;
                 try {
-                    const response = await fetch('/frontend-api/addresses', {
+                    const response = await fetch('/api/v1/addresses', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: this.getApiHeaders(),
                         body: JSON.stringify({ alias: this.aliasInput || null })
                     });
                     const data = await response.json();
                     if (!response.ok) throw new Error(data.error || 'Failed to generate address.');
-
                     this.currentAddress = data.address;
                     localStorage.setItem('activeMailbox', data.address);
                     this.aliasInput = data.address.split('@')[0];
                     this.loadHistory(); 
                     this.fetchMessageSummaries();
-                    
                     if (this.socket && this.socket.connected) {
                         this.socket.emit('join_mailbox', { address: data.address });
                     } else { this.initSocket(); }
@@ -221,7 +226,9 @@
                 this.messages = [];
                 this.selectedMessage = null;
                 try {
-                    const response = await fetch(`/frontend-api/addresses/${this.currentAddress}/messages`);
+                    const response = await fetch(`/api/v1/addresses/${this.currentAddress}/messages`, {
+                        headers: this.getApiHeaders()
+                    });
                     if (!response.ok) throw new Error(`API responded with status ${response.status}`);
                     this.messages = await response.json();
                 } catch (e) {
@@ -237,7 +244,9 @@
                 this.loading = true;
                 this.selectedMessage = { ...messageSummary, html_body: '<p>Loading full message...</p>', text_body: 'Loading...' };
                 try {
-                    const response = await fetch(`/frontend-api/messages/${this.currentAddress}/${messageSummary.id}`);
+                    const response = await fetch(`/api/v1/messages/${this.currentAddress}/${messageSummary.id}`, {
+                        headers: this.getApiHeaders()
+                    });
                     if (!response.ok) throw new Error(`API responded with status ${response.status}`);
                     this.selectedMessage = await response.json();
                     this.viewMode = 'html';
