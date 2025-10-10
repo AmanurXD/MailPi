@@ -1,0 +1,6 @@
+Flask
+Flask-SocketIO
+redis
+mailparser
+eventlet
+gunicorn
