@@ -81,13 +81,13 @@ Output:
 
     try:
         response = requests.post(
-            url="https://openrouter.ai/api/v1/chat/completions",
+            url="https://openrouter.ai/api/v1",
             headers={
                 "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                 "Content-Type": "application/json"
             },
             json={
-                "model": "meta-llama/llama-3.1-8b-instruct:free", # A more capable model
+                "model": "meta-llama/llama-3.3-8b-instruct:free", # A more capable model
                 "response_format": {"type": "json_object"},
                 "messages": [
                     {"role": "system", "content": system_prompt},
