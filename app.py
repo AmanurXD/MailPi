@@ -69,59 +69,88 @@ def generate_address(alias=None):
     return addr, expires_iso
 
 
-
-
-
-
-
-# Place this new function above your store_message function
-def extract_email_details(html_body, text_body):
+def extract_details_with_ai(text_content):
     """
-    Parses email content to extract OTPs (numeric and mixed-alphanumeric),
-    lists of potential numeric codes, and all hyperlinks.
+    Uses OpenRouter's Llama 3.3 model to intelligently extract OTPs.
+    Returns a dictionary with 'otp_digit' and 'otp_mix'.
     """
-    # Combine HTML and text for a comprehensive search space
-    content_to_search = f"{html_body} {text_body}"
-    
-    # --- 1. Link Extraction ---
-    # A robust regex to find all http/https links.
-    link_pattern = r'https?://[^\s"\'<>]+'
-    links = re.findall(link_pattern, content_to_search)
-    # Remove duplicates while preserving order
-    unique_links = sorted(list(set(links)), key=links.index) if links else []
+    if not OPENROUTER_API_KEY:
+        print("[AI_ERROR] OPENROUTER_API_KEY is not set. Skipping AI extraction.")
+        return {"otp_digit": None, "otp_mix": None}
 
-    # --- 2. OTP and Code Extraction ---
-    # We search the uppercase version to simplify regex patterns
-    search_upper = content_to_search.upper()
+    # Limit the text to the first ~4000 characters to be safe and save tokens
+    text_to_analyze = text_content[:4000]
 
-    # Pattern for numeric codes (4 to 8 digits). \b ensures we match whole numbers.
-    numeric_pattern = r'\b(\d{4,8})\b'
-    all_numeric_codes = re.findall(numeric_pattern, search_upper)
+    system_prompt = """You are an expert assistant specialized in extracting verification codes from email text. 
+Your task is to find the following two types of OTPs in the given email content:
 
-    # Pattern for mixed alphanumeric codes (5-8 chars, must contain at least one letter).
-    # This avoids capturing purely numeric codes again.
-    # (?=.*[A-Z]) is a "positive lookahead" that asserts a letter must exist.
-    mixed_pattern = r'\b(?=.*[A-Z])[A-Z0-9]{5,8}\b'
-    all_mixed_codes = re.findall(mixed_pattern, search_upper)
+1. otp_digit — numeric-only codes (e.g., 834659, 992993, 012930). Remove any non-digit characters like dashes or spaces.
+2. otp_mix — alphanumeric codes (e.g., AGU575, G7SZ). Keep letters and numbers exactly as they appear.
 
-    # --- 3. Assigning the final attributes ---
-    otp_digit = all_numeric_codes[0] if all_numeric_codes else None
-    otp_mix = all_mixed_codes[0] if all_mixed_codes else None
-    otp_lists = all_numeric_codes if all_numeric_codes else []
+Return a JSON object with the following structure:
 
-    return {
-        "otp_digit": otp_digit,
-        "otp_mix": otp_mix,
-        "otp_lists": otp_lists,
-        "links": unique_links
+{
+  "otp_digit": "<the numeric OTP found, or null if none>",
+  "otp_mix": "<the alphanumeric OTP found, or null if none>"
+}
+
+Do not include anything else in the output. 
+Do not explain anything. Only provide valid JSON."""
+
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json"
     }
 
+    data = {
+        "model": "meta-llama/llama-3.1-8b-instruct:free", # Using the specified free model
+        "response_format": {"type": "json_object"}, # This forces the model to output valid JSON
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text_to_analyze}
+        ]
+    }
+
+    try:
+        response = requests.post(OPENROUTER_API_URL, headers=headers, json=data, timeout=15)
+        response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
+        
+        # The AI's response is a JSON string inside another JSON object, so we parse twice.
+        ai_response_json = response.json()
+        content_string = ai_response_json['choices'][0]['message']['content']
+        extracted_codes = json.loads(content_string)
+        
+        # Validate that we got the expected keys
+        return {
+            "otp_digit": extracted_codes.get("otp_digit"),
+            "otp_mix": extracted_codes.get("otp_mix")
+        }
+
+    except requests.exceptions.RequestException as e:
+        print(f"[AI_ERROR] Request to OpenRouter failed: {e}")
+    except (json.JSONDecodeError, KeyError, IndexError) as e:
+        print(f"[AI_ERROR] Failed to parse AI response: {e}")
+    
+    # Fail gracefully if anything goes wrong
+    return {"otp_digit": None, "otp_mix": None}
+
+
+def extract_links_with_regex(html_body, text_body):
+    """
+    A simple, fast regex-based function to ONLY extract links.
+    """
+    content_to_search = f"{html_body} {text_body}"
+    link_pattern = r'https?://[^\s"\'<>]+'
+    links = re.findall(link_pattern, content_to_search)
+    return sorted(list(set(links)), key=links.index) if links else []
 
 # Replace your existing store_message function with this new version
+# Replace the old store_message with this upgraded version
+
 def store_message(to_address, from_addr, subject, raw):
     if not redis_client.hexists(ADDRESSES_KEY, to_address):
         print(f"[Webhook] Received mail for unknown/expired address: {to_address}")
-        return # Stop processing for unknown addresses
+        return
 
     html_body, text_body, full_sender_identity = "No HTML content found.", "No plain text content found.", from_addr
     try:
@@ -140,12 +169,15 @@ def store_message(to_address, from_addr, subject, raw):
         text_body = f"ERROR: Failed to parse raw content. Details: {error_msg}"
         html_body = f'<h1>Error parsing email content!</h1><pre>{error_msg}</pre>'
 
-    # Generate a more stable message ID
+    # --- HYBRID EXTRACTION ENGINE ---
+    # 1. Use the powerful AI for intelligent OTP extraction from the plain text.
+    ai_extracted_otps = extract_details_with_ai(text_body)
+    
+    # 2. Use fast and simple regex just for extracting links.
+    extracted_links = extract_links_with_regex(html_body, text_body)
+
     message_id = f"{datetime.utcnow().timestamp()}-{secrets.token_hex(2)}"
-
-    # Call our new super extractor!
-    extracted_data = extract_email_details(html_body, text_body)
-
+    
     message_data = {
         "id": message_id,
         "from": full_sender_identity,
@@ -153,22 +185,24 @@ def store_message(to_address, from_addr, subject, raw):
         "received_at": datetime.utcnow().isoformat(),
         "html_body": html_body,
         "text_body": text_body,
+        "links": extracted_links, # Add the links
+        "otp_digit": ai_extracted_otps.get("otp_digit"), # Add the AI-found digit OTP
+        "otp_mix": ai_extracted_otps.get("otp_mix"),     # Add the AI-found mix OTP
+        "otp_lists": [] # We can deprecate this or fill it with regex as a backup if needed
     }
-    # Cleanly merge the extracted data into our message object
-    message_data.update(extracted_data)
     
     redis_client.lpush(f"{MESSAGES_PREFIX}{to_address}", json.dumps(message_data))
     redis_client.ltrim(f"{MESSAGES_PREFIX}{to_address}", 0, 99)
 
-    # Emit a richer real-time event for the frontend
+    # Emit the new, smarter data in the real-time event
     mini_msg = {
         "id": message_id,
         "address": to_address,
         "from": full_sender_identity,
         "subject": subject,
         "received_at": message_data["received_at"],
-        "otp_digit": extracted_data["otp_digit"], # Add new fields to socket event
-        "otp_mix": extracted_data["otp_mix"]
+        "otp_digit": message_data["otp_digit"],
+        "otp_mix": message_data["otp_mix"]
     }
     socketio.emit('new_mail', mini_msg, room=to_address)
 
