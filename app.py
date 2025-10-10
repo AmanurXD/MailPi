@@ -254,9 +254,13 @@ def get_full_message(email, message_id):
     for msg_json in messages_json:
         try:
             msg = json.loads(msg_json)
-            if msg.get("id") == message_id:
+            # --- THIS IS THE FIX ---
+            # Check if the requested message_id matches EITHER the real 'id'
+            # OR the fallback 'received_at' timestamp.
+            if msg.get("id") == message_id or msg.get("received_at") == message_id:
+
                 # For security, don't expose the raw field in the API
-                msg.pop("raw", None) 
+                msg.pop("raw", None)                
                 return jsonify(msg)
         except (json.JSONDecodeError, KeyError):
             continue
