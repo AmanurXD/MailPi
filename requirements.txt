@@ -1,6 +1,6 @@
 Flask
 Flask-SocketIO
 redis
-mailparser
+mail-parser
 eventlet
 gunicorn
