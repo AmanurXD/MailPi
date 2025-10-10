@@ -52,14 +52,33 @@ MESSAGES_PREFIX = "messages:"
 
 # --- Helper Functions ---
 
-# --- FIX 1: THE UPGRADED AI EXTRACTOR ---
+
+
+
+def _parse_ai_json_response(response_text):
+    """
+    A robust helper to find and parse a JSON object from a messy AI string.
+    """
+    try:
+        # The most reliable way: find the first '{' and the last '}'
+        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        if json_match:
+            json_string = json_match.group(0)
+            return json.loads(json_string)
+        else:
+            # If no JSON object is found at all
+            print("[AI_WARN] No JSON object found in the AI response.")
+            return None
+    except json.JSONDecodeError:
+        print(f"[AI_ERROR] Could not decode the JSON from the AI response: {response_text}")
+        return None
+
 def extract_details_with_ai(text_content):
     """Uses OpenRouter to intelligently extract OTPs and returns them."""
     if not OPENROUTER_API_KEY:
         print("[AI_WARN] OPENROUTER_API_KEY not set. Skipping AI.")
         return {"otp_digit": None, "otp_mix": None}
 
-    # A much stricter, improved prompt
     system_prompt = """You are an expert JSON-only data extraction tool. Analyze the user-provided email text.
 Your task is to find two types of codes:
 1. `otp_digit`: A numeric-only code, 4-8 digits long. IGNORE any dashes or spaces (e.g., "123-456" becomes "123456").
@@ -81,37 +100,52 @@ Output:
 
     try:
         response = requests.post(
-            url="https://openrouter.ai/api/v1",
+            url="https://openrouter.ai/api/v1/chat/completions",
             headers={
                 "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                # Recommended by OpenRouter for identifying your app
+                "HTTP-Referer": "https://mailpi-1z5b.onrender.com", 
+                "X-Title": "MailPi API"
             },
             json={
-                "model": "meta-llama/llama-3.3-8b-instruct:free", # A more capable model
+                "model": "meta-llama/llama-3.3-8b-instruct:free", # Using the correct, tested model name
                 "response_format": {"type": "json_object"},
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": text_content[:4000]}
                 ]
             },
-            timeout=15
+            timeout=20 # Increased timeout slightly for reliability
         )
         response.raise_for_status()
-        content_string = response.json()['choices'][0]['message']['content']
-        extracted_codes = json.loads(content_string)
         
-        # Final validation and cleaning
+        # Get the raw text content from the AI
+        content_string = response.json()['choices'][0]['message']['content']
+        
+        # Use our NEW robust parser to safely extract the JSON
+        extracted_codes = _parse_ai_json_response(content_string)
+
+        if not extracted_codes:
+            # If parsing failed, we return nulls
+            return {"otp_digit": None, "otp_mix": None}
+
         otp_digit = extracted_codes.get("otp_digit")
         if otp_digit and isinstance(otp_digit, str):
-            otp_digit = re.sub(r'\D', '', otp_digit) # Remove non-digits as a fallback
+            otp_digit = re.sub(r'\D', '', otp_digit) # Clean any remaining non-digits
 
         return {
             "otp_digit": otp_digit or None,
             "otp_mix": extracted_codes.get("otp_mix") or None
         }
     except Exception as e:
-        print(f"[AI_ERROR] Failed to extract details with AI: {e}")
+        print(f"[AI_ERROR] An exception occurred during AI extraction: {e}")
         return {"otp_digit": None, "otp_mix": None}
+
+
+
+
+
 
 def extract_links_with_regex(html_body, text_body):
     """A simple, fast regex-based function to ONLY extract links."""
