@@ -87,7 +87,7 @@ Output:
                 "Content-Type": "application/json"
             },
             json={
-                "model": "nousresearch/nous-hermes-2-mixtral-8x7b-dpo", # A more capable model
+                "model": "meta-llama/llama-3.1-8b-instruct:free", # A more capable model
                 "response_format": {"type": "json_object"},
                 "messages": [
                     {"role": "system", "content": system_prompt},
