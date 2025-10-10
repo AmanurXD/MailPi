@@ -231,7 +231,9 @@ def get_messages_for_address(email):
         try:
             msg = json.loads(msg_json)
             messages_summary.append({
-                "id": msg.get("id"),
+                # --- THIS IS THE FIX ---
+                # Use the real 'id' if it exists, otherwise fall back to 'received_at'
+                "id": msg.get("id") or msg.get("received_at"), 
                 "from": msg.get("from"),
                 "subject": msg.get("subject"),
                 "received_at": msg.get("received_at"),
