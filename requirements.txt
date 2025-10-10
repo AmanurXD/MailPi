@@ -5,3 +5,4 @@ mail-parser
 eventlet
 gunicorn
 requests
+Flask-Limiter
