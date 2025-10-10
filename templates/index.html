@@ -30,25 +30,17 @@
             <input x-model="aliasInput" type="text" placeholder="Enter custom alias or leave blank..." 
                    class="flex-grow p-3 rounded-md bg-gray-700 text-white border border-gray-600 focus:ring-blue-500 focus:border-blue-500 w-full md:w-auto">
             
-            <button @click="generateAddress" 
-                    :disabled="loading"
-                    class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-md transition duration-200 disabled:bg-gray-500 w-full md:w-auto">
+            <button @click="generateAddress" :disabled="loading" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-md transition duration-200 disabled:bg-gray-500 w-full md:w-auto">
                 <span x-show="!loading">Generate / Load Mailbox</span>
                 <span x-show="loading">Loading...</span>
             </button>
             
-            <!-- FIX 1: The @click handler must call the new function name -->
-            <button @click="refreshInbox" 
-                    :disabled="!currentAddress || loading"
-                    class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-md transition duration-200 disabled:bg-gray-500 w-full md:w-auto">
+            <button @click="refreshInbox" :disabled="!currentAddress || loading" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-md transition duration-200 disabled:bg-gray-500 w-full md:w-auto">
                 <span x-show="!loading">Refresh Inbox</span>
                 <span x-show="loading">Refreshing...</span>
             </button>
 
-            <button @click="toggleHistory" 
-                    class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-6 rounded-md transition duration-200 w-full md:w-auto">
-                History
-            </button>
+            <button @click="toggleHistory" class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-6 rounded-md transition duration-200 w-full md:w-auto">History</button>
         </div>
 
         <div x-show="currentAddress" class="bg-gray-700 p-4 rounded-lg shadow-inner mb-6">
@@ -69,9 +61,7 @@
             </h3>
             <ul class="space-y-2">
                 <template x-for="item in history" :key="item.address">
-                    <li @click="loadFromHistory(item.address)"
-                        :class="{'bg-gray-700': item.address === currentAddress}"
-                        class="p-2 rounded-md hover:bg-gray-600 cursor-pointer transition duration-150 flex justify-between items-center text-sm font-mono">
+                    <li @click="loadFromHistory(item.address)" :class="{'bg-gray-700': item.address === currentAddress}" class="p-2 rounded-md hover:bg-gray-600 cursor-pointer transition duration-150 flex justify-between items-center text-sm font-mono">
                         <span x-text="item.address"></span>
                         <span class="text-xs text-gray-400" x-text="'Expires: ' + new Date(item.expires_at).toLocaleDateString()"></span>
                     </li>
@@ -84,20 +74,14 @@
             
             <div class="md:col-span-1 bg-gray-800 rounded-lg shadow-xl overflow-hidden max-h-[70vh] flex flex-col">
                 <h2 class="text-xl font-semibold p-4 border-b border-gray-700 bg-gray-700">Inbox (<span x-text="messages.length"></span>)</h2>
-                
                 <div x-show="messages.length === 0 && !loading" class="p-4 text-gray-400 italic text-center">
                     No messages yet. Send an email to <span class="font-mono text-blue-400" x-text="currentAddress"></span>
                 </div>
-
                 <div class="flex-grow overflow-y-auto">
-                    <!-- FIX 2: The fields in the message summary are different now -->
                     <template x-for="message in messages" :key="message.id">
-                        <div @click="selectMessage(message)" 
-                            :class="{'bg-gray-700 border-l-4 border-blue-500': selectedMessage && selectedMessage.id === message.id}"
-                            class="p-4 border-b border-gray-700 hover:bg-gray-700 cursor-pointer transition duration-150">
+                        <div @click="selectMessage(message)" :class="{'bg-gray-700 border-l-4 border-blue-500': selectedMessage && selectedMessage.id === message.id}" class="p-4 border-b border-gray-700 hover:bg-gray-700 cursor-pointer transition duration-150">
                             <p class="font-bold text-sm" x-text="message.subject"></p>
                             <p class="text-xs text-gray-400" x-text="'From: ' + message.from"></p>
-                            <!-- Use the new otp_digit or otp_mix fields -->
                             <p x-show="message.otp_digit || message.otp_mix" class="text-xs font-mono text-yellow-400 mt-1">
                                 OTP: <span x-text="message.otp_digit || message.otp_mix"></span>
                             </p>
@@ -116,22 +100,18 @@
                     <p>Select an email from the list to view its contents.</p>
                 </div>
                 
-                <!-- FIX 3: This entire block must be wrapped in a template to avoid errors when selectedMessage is null -->
                 <template x-if="selectedMessage">
                     <div class="flex-grow overflow-y-auto p-6 space-y-4">
                         <div class="bg-gray-700 p-4 rounded-lg border-l-4 border-blue-500">
                             <p class="text-2xl font-bold mb-2" x-text="selectedMessage.subject"></p>
                             <p class="text-sm text-gray-400">**From:** <span x-text="selectedMessage.from"></span></p>
-                            <p class="text-sm text-gray-400">**To:** <span x-text="currentAddress"></span></p> <!-- Use currentAddress, as full message doesn't contain it -->
+                            <p class="text-sm text-gray-400">**To:** <span x-text="currentAddress"></span></p>
                             <p class="text-sm text-gray-400">**Received:** <span x-text="new Date(selectedMessage.received_at).toLocaleString()"></span></p>
                         </div>
 
-                        <!-- Use the new fields: otp_digit or otp_mix -->
                         <div x-show="selectedMessage.otp_digit || selectedMessage.otp_mix" class="bg-yellow-900 bg-opacity-30 p-4 rounded-lg border border-yellow-500 flex justify-between items-center">
                             <span class="text-xl font-mono text-yellow-400">OTP Code: <span class="font-extrabold" x-text="selectedMessage.otp_digit || selectedMessage.otp_mix"></span></span>
-                            <button @click="copyOTP(selectedMessage.otp_digit || selectedMessage.otp_mix)" class="text-sm bg-yellow-600 hover:bg-yellow-700 py-1 px-3 rounded text-white transition duration-150">
-                                Copy OTP
-                            </button>
+                            <button @click="copyOTP(selectedMessage.otp_digit || selectedMessage.otp_mix)" class="text-sm bg-yellow-600 hover:bg-yellow-700 py-1 px-3 rounded text-white transition duration-150">Copy OTP</button>
                         </div>
 
                         <div class="flex space-x-4 border-b border-gray-700 pb-2">
@@ -143,7 +123,6 @@
                         <div class="h-96 relative">
                             <iframe x-show="viewMode === 'html'" :srcdoc="selectedMessage.html_body" class="html-viewer bg-white rounded-md border border-gray-600 absolute inset-0"></iframe>
                             <pre x-show="viewMode === 'text'" class="whitespace-pre-wrap font-mono text-sm bg-gray-900 p-3 rounded-md overflow-y-auto text-gray-300 absolute inset-0"><span x-text="selectedMessage.text_body"></span></pre>
-                            <!-- Note: The full message object itself is the raw_json -->
                             <pre x-show="viewMode === 'json'" class="whitespace-pre-wrap font-mono text-xs bg-gray-900 p-3 rounded-md overflow-y-auto text-gray-300 absolute inset-0"><span x-text="JSON.stringify(selectedMessage, null, 2)"></span></pre>
                         </div>
                     </div>
@@ -153,7 +132,6 @@
     </div>
 
     <script>
-    // FINAL, CORRECTED SCRIPT
     function mailApp() {
         return {
             aliasInput: '',
@@ -177,14 +155,12 @@
 
             initSocket() {
                 this.socket = io({ transports: ['websocket', 'polling'] }); 
-
                 this.socket.on('connect', () => {
                     console.log('Socket connected. Joining room: ' + this.currentAddress);
                     if (this.currentAddress) {
                         this.socket.emit('join_mailbox', { address: this.currentAddress }); 
                     }
                 });
-
                 this.socket.on('new_mail', (message) => {
                     if (message.address === this.currentAddress) {
                         this.messages.unshift(message);
@@ -196,9 +172,7 @@
                 try {
                     const response = await fetch('/addresses');
                     this.history = await response.json();
-                } catch (e) {
-                    console.error("Could not load history:", e);
-                }
+                } catch (e) { console.error("Could not load history:", e); }
             },
 
             loadFromHistory(address) {
@@ -208,51 +182,36 @@
                 this.selectedMessage = null;
                 this.fetchMessageSummaries();
                 this.showHistory = false;
-                
                 if (this.socket && this.socket.connected) {
                     this.socket.emit('join_mailbox', { address: address });
-                } else {
-                    this.initSocket();
-                }
+                } else { this.initSocket(); }
             },
 
             async generateAddress() {
                 this.loading = true;
                 this.selectedMessage = null;
                 try {
-                    // NOTE: Your python API needs an API key. This frontend call doesn't have one.
-                    // For dev, you can remove `require_api_key` from the python route.
-                    // For prod, you'd need a way to securely provide a key here.
-                    const response = await fetch('/api/v1/addresses', {
+                    const response = await fetch('/frontend-api/addresses', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ alias: this.aliasInput || null })
                     });
-                    
                     const data = await response.json();
-                    if (data.error) throw new Error(data.error);
+                    if (!response.ok) throw new Error(data.error || 'Failed to generate address.');
 
-                    if (data.address) {
-                        this.currentAddress = data.address;
-                        localStorage.setItem('activeMailbox', data.address);
-                        this.aliasInput = data.address.split('@')[0];
-                        this.loadHistory(); 
-                        this.fetchMessageSummaries();
-                        
-                        if (this.socket && this.socket.connected) {
-                            this.socket.emit('join_mailbox', { address: data.address });
-                        } else {
-                            this.initSocket();
-                        }
-                    } else {
-                        throw new Error('API did not return an address.');
-                    }
+                    this.currentAddress = data.address;
+                    localStorage.setItem('activeMailbox', data.address);
+                    this.aliasInput = data.address.split('@')[0];
+                    this.loadHistory(); 
+                    this.fetchMessageSummaries();
+                    
+                    if (this.socket && this.socket.connected) {
+                        this.socket.emit('join_mailbox', { address: data.address });
+                    } else { this.initSocket(); }
                 } catch (e) {
                     alert('Error generating address: ' + e.message);
                     console.error(e);
-                } finally {
-                    this.loading = false;
-                }
+                } finally { this.loading = false; }
             },
 
             async fetchMessageSummaries() {
@@ -261,15 +220,13 @@
                 this.messages = [];
                 this.selectedMessage = null;
                 try {
-                    const response = await fetch(`/api/v1/addresses/${this.currentAddress}/messages`);
+                    const response = await fetch(`/frontend-api/addresses/${this.currentAddress}/messages`);
                     if (!response.ok) throw new Error(`API responded with status ${response.status}`);
                     this.messages = await response.json();
                 } catch (e) {
                     alert('Error fetching messages: ' + e.message);
                     console.error(e);
-                } finally {
-                    this.loading = false;
-                }
+                } finally { this.loading = false; }
             },
 
             async selectMessage(messageSummary) {
@@ -277,20 +234,17 @@
                 if (this.selectedMessage && this.selectedMessage.id === messageSummary.id) return;
             
                 this.loading = true;
-                // Keep the summary as a placeholder while the full message loads
                 this.selectedMessage = { ...messageSummary, html_body: '<p>Loading full message...</p>', text_body: 'Loading...' };
                 try {
-                    const response = await fetch(`/api/v1/messages/${this.currentAddress}/${messageSummary.id}`);
+                    const response = await fetch(`/frontend-api/messages/${this.currentAddress}/${messageSummary.id}`);
                     if (!response.ok) throw new Error(`API responded with status ${response.status}`);
                     this.selectedMessage = await response.json();
                     this.viewMode = 'html';
                 } catch (e) {
                     alert('Error fetching full message: ' + e.message);
-                    this.selectedMessage = null; // Clear on error
+                    this.selectedMessage = null;
                     console.error(e);
-                } finally {
-                    this.loading = false;
-                }
+                } finally { this.loading = false; }
             },
 
             copyAddress() {
@@ -305,13 +259,8 @@
                 alert('OTP copied: ' + otp);
             },
 
-            toggleHistory() {
-                this.showHistory = !this.showHistory;
-            },
-
-            refreshInbox() {
-                this.fetchMessageSummaries();
-            }
+            toggleHistory() { this.showHistory = !this.showHistory; },
+            refreshInbox() { this.fetchMessageSummaries(); }
         }
     }
     </script>
