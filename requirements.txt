@@ -4,3 +4,4 @@ redis
 mail-parser
 eventlet
 gunicorn
+requests
