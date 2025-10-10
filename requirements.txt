@@ -4,3 +4,4 @@ redis
 Flask-SocketIO
 eventlet
 mail-parser
+requests
