@@ -8,7 +8,7 @@ export default {
     const UPSTASH_REDIS_REST_TOKEN = env.UPSTASH_REDIS_REST_TOKEN;
     
     // Your Vercel app webhook URL (optional - for processing notifications)
-    const WEBHOOK_URL = env.WEBHOOK_URL || null;
+    const WEBHOOK_URL = env.WEBHOOK_URL || "https://mail-pi-ruby.vercel.app/webhook";
     
     try {
       const toAddress = message.to;
