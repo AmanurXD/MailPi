@@ -191,11 +191,17 @@ def create_address():
 @api_v1.route("/addresses/<string:email>/messages", methods=["GET"])
 @require_api_key
 def get_messages_for_address(email):
-    messages_json = upstash_lrange(f"{MESSAGES_PREFIX}{email}", 0, -1)
+    messages_raw = upstash_lrange(f"{MESSAGES_PREFIX}{email}", 0, -1)
     messages_summary = []
-    for msg_json in messages_json:
+    for msg_raw in messages_raw:
         try:
-            msg = json.loads(msg_json)
+            # Handle both string and dict formats
+            if isinstance(msg_raw, str):
+                msg = json.loads(msg_raw)
+            elif isinstance(msg_raw, dict):
+                msg = msg_raw
+            else:
+                continue
             messages_summary.append({
                 "id": msg.get("id"),
                 "from": msg.get("from"),
@@ -205,16 +211,22 @@ def get_messages_for_address(email):
                 "otp_mix": msg.get("otp_mix"),
                 "has_links": bool(msg.get("links"))
             })
-        except (json.JSONDecodeError, KeyError): continue
+        except (json.JSONDecodeError, KeyError, TypeError): continue
     return jsonify(messages_summary)
 
 @api_v1.route("/messages/<string:email>/<string:message_id>", methods=["GET"])
 @require_api_key
 def get_full_message(email, message_id):
-    messages_json = upstash_lrange(f"{MESSAGES_PREFIX}{email}", 0, -1)
-    for msg_json in messages_json:
+    messages_raw = upstash_lrange(f"{MESSAGES_PREFIX}{email}", 0, -1)
+    for msg_raw in messages_raw:
         try:
-            msg = json.loads(msg_json)
+            # Handle both string and dict formats
+            if isinstance(msg_raw, str):
+                msg = json.loads(msg_raw)
+            elif isinstance(msg_raw, dict):
+                msg = msg_raw
+            else:
+                continue
             if msg.get("id") == message_id:
                 return jsonify(msg)
         except (json.JSONDecodeError, KeyError): continue
