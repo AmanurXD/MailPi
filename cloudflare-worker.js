@@ -1,63 +1,109 @@
-// Cloudflare Worker - Email Router for MailPi
-// This worker receives emails from Cloudflare Email Routing and forwards to your Flask app
+// Cloudflare Worker - Email Router for MailPi (Vercel + Upstash Version)
+// This worker receives emails from Cloudflare Email Routing and stores directly in Upstash Redis
 
 export default {
   async email(message, env, ctx) {
-    // Your Flask app webhook URL (update this after you deploy)
-    const WEBHOOK_URL = env.WEBHOOK_URL || "https://your-app-url.onrender.com/webhook";
+    // Upstash Redis REST API credentials
+    const UPSTASH_REDIS_REST_URL = env.UPSTASH_REDIS_REST_URL;
+    const UPSTASH_REDIS_REST_TOKEN = env.UPSTASH_REDIS_REST_TOKEN;
+    
+    // Your Vercel app webhook URL (optional - for processing notifications)
+    const WEBHOOK_URL = env.WEBHOOK_URL || null;
     
     try {
-      // Extract email data
-      const to = message.headers.get("to") || message.to;
-      const from = message.headers.get("from") || message.from;
+      const toAddress = message.to;
+      const fromAddress = message.from;
       const subject = message.headers.get("subject") || "No Subject";
       
-      // Get raw email content
-      const rawEmail = await message.arrayBuffer();
-      const rawBase64 = btoa(String.fromCharCode(...new Uint8Array(rawEmail)));
-      
-      // Get text content if available
+      // Get email content
       let textContent = "";
       let htmlContent = "";
       
       if (message.body) {
-        // Try to get text body
-        const textBody = await message.text();
-        if (textBody) {
-          textContent = textBody;
+        try {
+          textContent = await message.text();
+        } catch (e) {
+          console.log("Could not get text body:", e.message);
         }
       }
 
-      // Prepare payload for Flask webhook
-      const payload = {
-        to: message.to,
-        from: message.from,
+      // Create unique message ID
+      const messageId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const now = new Date().toISOString();
+      
+      // Prepare message data
+      const messageData = {
+        id: messageId,
+        from: fromAddress,
         subject: subject,
-        raw: rawBase64,  // Base64 encoded raw email
-        text: textContent,
-        html: htmlContent
+        received_at: now,
+        html_body: htmlContent || `<pre>${textContent}</pre>`,
+        text_body: textContent,
+        links: [],
+        otp_digit: null,
+        otp_mix: null
       };
 
-      // Forward to your Flask app
-      const response = await fetch(WEBHOOK_URL, {
+      // Simple regex to extract OTPs
+      const otpDigit = textContent.match(/\b\d{4,8}\b/g);
+      const otpMix = textContent.match(/\b[a-zA-Z0-9]{6,10}\b/g);
+      
+      if (otpDigit) messageData.otp_digit = otpDigit[0];
+      if (otpMix && otpMix[0] !== otpDigit?.[0]) messageData.otp_mix = otpMix[0];
+
+      // Extract links
+      const links = textContent.match(/https?:\/\/[^\s"'<>]+/g);
+      if (links) messageData.links = [...new Set(links)];
+
+      // Store in Upstash Redis via REST API
+      const redisKey = `messages:${toAddress}`;
+      
+      // LPUSH - add to beginning of list
+      const lpushResponse = await fetch(`${UPSTASH_REDIS_REST_URL}/lpush/${encodeURIComponent(redisKey)}`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+          "Authorization": `Bearer ${UPSTASH_REDIS_REST_TOKEN}`,
+          "Content-Type": "application/json"
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify([JSON.stringify(messageData)])
       });
 
-      if (!response.ok) {
-        console.error(`Webhook failed: ${response.status} ${await response.text()}`);
-        // Still accept the email so Cloudflare doesn't retry
-        return;
+      if (!lpushResponse.ok) {
+        const error = await lpushResponse.text();
+        console.error(`Redis LPUSH failed: ${error}`);
+        throw new Error(`Redis LPUSH failed: ${error}`);
       }
 
-      console.log(`Email forwarded successfully: ${message.from} -> ${message.to}`);
+      // LTRIM - keep only last 100 messages
+      await fetch(`${UPSTASH_REDIS_REST_URL}/ltrim/${encodeURIComponent(redisKey)}/0/99`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${UPSTASH_REDIS_REST_TOKEN}`,
+        }
+      });
+
+      console.log(`Email stored in Redis: ${fromAddress} -> ${toAddress} (ID: ${messageId})`);
+
+      // Optional: Notify Vercel app about new email
+      if (WEBHOOK_URL) {
+        try {
+          await fetch(WEBHOOK_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              address: toAddress,
+              message_id: messageId,
+              from: fromAddress,
+              subject: subject
+            })
+          });
+        } catch (e) {
+          console.log("Webhook notification failed (non-critical):", e.message);
+        }
+      }
       
     } catch (error) {
       console.error(`Error processing email: ${error.message}`);
-      // Return error to Cloudflare so it knows something went wrong
       throw error;
     }
   }

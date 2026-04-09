@@ -2,10 +2,10 @@ name = "mailpi-email-router"
 main = "cloudflare-worker.js"
 compatibility_date = "2024-01-01"
 
-# Environment variables (set these in Cloudflare dashboard)
-[vars]
-# WEBHOOK_URL = "https://your-app-url.onrender.com/webhook"
+# Environment variables - SET THESE IN CLOUDFLARE DASHBOARD!
+# UPSTASH_REDIS_REST_URL = "https://blessed-wallaby-77655.upstash.io"
+# UPSTASH_REDIS_REST_TOKEN = "gQAAAAAAAS9XAAIncDIxMWIwOTExYjM2NDk0YTYyOGQxNWU1YjRkOTJjOWNlOHAyNzc2NTU"
+# WEBHOOK_URL = "https://mailpi-pawclaw.vercel.app/webhook" (optional)
 
-# For production
 [env.production]
 name = "mailpi-email-router-prod"
