@@ -55,7 +55,11 @@ def upstash_lrange(key, start, stop):
         headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"}
     )
     result = response.json()
-    return result.get("result", [])
+    # Upstash returns nested array [["item1", "item2"]] - flatten it
+    data = result.get("result", [])
+    if data and isinstance(data, list) and len(data) > 0 and isinstance(data[0], list):
+        return data[0]
+    return data if isinstance(data, list) else []
 
 def upstash_hset(key, field, value):
     url = f"{UPSTASH_REDIS_REST_URL}/hset/{key}"
@@ -73,7 +77,12 @@ def upstash_hgetall(key):
         headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"}
     )
     result = response.json()
-    items = result.get("result", [])
+    # Upstash returns [["key1", "val1", "key2", "val2"]] - get inner array
+    data = result.get("result", [])
+    if data and isinstance(data, list) and len(data) > 0 and isinstance(data[0], list):
+        items = data[0]
+    else:
+        items = data if isinstance(data, list) else []
     return {items[i]: items[i+1] for i in range(0, len(items), 2)}
 
 def upstash_hexists(key, field):
