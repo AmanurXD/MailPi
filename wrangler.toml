@@ -1,0 +1,11 @@
+name = "mailpi-email-router"
+main = "cloudflare-worker.js"
+compatibility_date = "2024-01-01"
+
+# Environment variables (set these in Cloudflare dashboard)
+[vars]
+# WEBHOOK_URL = "https://your-app-url.onrender.com/webhook"
+
+# For production
+[env.production]
+name = "mailpi-email-router-prod"
