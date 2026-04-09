@@ -23,7 +23,7 @@ app = Flask(__name__)
 # --- Configuration ---
 REDIS_URL = os.environ.get("UPSTASH_REDIS_URL")
 REDIS_TOKEN = os.environ.get("UPSTASH_REDIS_TOKEN")
-SUBDOMAIN = os.environ.get("SUBDOMAIN", "codewithjames.top")
+SUBDOMAIN = os.environ.get("SUBDOMAIN", "pawclaw.top")
 ADDRESS_TTL_DAYS = 14
 API_KEY = os.environ.get("API_KEY")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
@@ -105,7 +105,7 @@ Output:
                 "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                 "Content-Type": "application/json",
                 # Recommended by OpenRouter for identifying your app
-                "HTTP-Referer": "https://mailpi-1z5b.onrender.com", 
+                "HTTP-Referer": "https://mail.pawclaw.top", 
                 "X-Title": "MailPi API"
             },
             json={
