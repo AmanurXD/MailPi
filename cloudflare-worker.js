@@ -10,21 +10,46 @@ export default {
     // Your Vercel app webhook URL (optional - for processing notifications)
     const WEBHOOK_URL = env.WEBHOOK_URL || "https://mail-pi-ruby.vercel.app/webhook";
     
+    const normalizeAddress = (value) => {
+      if (!value) return "";
+      if (typeof value === "string") return value;
+      if (typeof value === "object") {
+        if (typeof value.address === "string") return value.address;
+        if (typeof value.email === "string") return value.email;
+        if (typeof value.toString === "function") return value.toString();
+      }
+      return String(value);
+    };
+
+    const getHeader = (name) => {
+      try {
+        return message?.headers?.get?.(name) || null;
+      } catch {
+        return null;
+      }
+    };
+
     try {
-      const toAddress = message.to;
-      const fromAddress = message.from;
-      const subject = message.headers.get("subject") || "No Subject";
+      if (!UPSTASH_REDIS_REST_URL || !UPSTASH_REDIS_REST_TOKEN) {
+        throw new Error("Missing UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN env var");
+      }
+
+      const toAddress = normalizeAddress(message.to);
+      const fromAddress = normalizeAddress(message.from);
+      const subject = getHeader("subject") || "No Subject";
       
       // Get email content
       let textContent = "";
       let htmlContent = "";
       
-      if (message.body) {
-        try {
+      try {
+        if (message?.raw) {
+          textContent = await new Response(message.raw).text();
+        } else if (typeof message?.text === "function") {
           textContent = await message.text();
-        } catch (e) {
-          console.log("Could not get text body:", e.message);
         }
+      } catch (e) {
+        console.log("Could not read email body:", e?.message || String(e));
       }
 
       // Create unique message ID
@@ -103,8 +128,12 @@ export default {
       }
       
     } catch (error) {
-      console.error(`Error processing email: ${error.message}`);
-      throw error;
+      console.error("Error processing email:", {
+        message: error?.message || String(error),
+        stack: error?.stack,
+      });
+      // Do not throw: throwing causes Cloudflare Email Routing delivery failures/bounces.
+      return;
     }
   }
 };
