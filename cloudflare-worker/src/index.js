@@ -28,25 +28,60 @@ export default {
   async email(message, env) {
     const raw = await readRawEmail(message);
     const subject = message.headers.get("subject") || "";
+    const webhookUrl = env.MAILPI_WEBHOOK_URL;
+    const hasWebhookSecret = Boolean(env.MAILPI_WEBHOOK_SECRET);
 
-    const response = await fetch(env.MAILPI_WEBHOOK_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Webhook-Secret": env.MAILPI_WEBHOOK_SECRET,
-      },
-      body: JSON.stringify({
+    console.log(
+      JSON.stringify({
+        event: "incoming_email",
         to: message.to,
         from: message.from,
         subject,
-        raw,
-        raw_size: message.rawSize,
+        rawSize: message.rawSize,
+        webhookConfigured: Boolean(webhookUrl),
+        webhookSecretConfigured: hasWebhookSecret,
       }),
-    });
+    );
 
-    if (!response.ok) {
+    if (!webhookUrl) {
+      console.error("MAILPI_WEBHOOK_URL is not configured");
+      message.setReject("MailPi webhook URL is not configured");
+      return;
+    }
+
+    try {
+      const response = await fetch(webhookUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Webhook-Secret": env.MAILPI_WEBHOOK_SECRET,
+        },
+        body: JSON.stringify({
+          to: message.to,
+          from: message.from,
+          subject,
+          raw,
+          raw_size: message.rawSize,
+        }),
+      });
+
       const detail = await response.text();
-      message.setReject(`MailPi webhook failed: ${response.status} ${detail.slice(0, 120)}`);
+      console.log(
+        JSON.stringify({
+          event: "mailpi_webhook_response",
+          status: response.status,
+          ok: response.ok,
+          detail: detail.slice(0, 200),
+        }),
+      );
+
+      if (!response.ok) {
+        message.setReject(`MailPi webhook failed: ${response.status} ${detail.slice(0, 120)}`);
+        return;
+      }
+    } catch (error) {
+      console.error(`MailPi webhook fetch failed: ${error.message}`);
+      message.setReject(`MailPi webhook fetch failed: ${error.message.slice(0, 120)}`);
       return;
     }
 

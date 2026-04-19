@@ -283,12 +283,22 @@ def home():
 
 @app.route("/webhook", methods=["POST"])
 def api_webhook():
-    if WEBHOOK_SECRET and request.headers.get("X-Webhook-Secret") != WEBHOOK_SECRET:
+    provided_secret = request.headers.get("X-Webhook-Secret")
+    print(
+        f"[WEBHOOK] Hit from {request.headers.get('CF-Connecting-IP', request.remote_addr)} "
+        f"secret_configured={bool(WEBHOOK_SECRET)} secret_match={provided_secret == WEBHOOK_SECRET}"
+    )
+    if WEBHOOK_SECRET and provided_secret != WEBHOOK_SECRET:
+        print("[WEBHOOK] Rejecting request due to invalid secret.")
         return jsonify({"error": "Unauthorized."}), 401
     data = request.get_json(force=True, silent=True)
     if not data: return jsonify({"error": "No JSON received"}), 400
     to_addr = data.get("to")
     if not to_addr: return jsonify({"error": "Missing 'to' field"}), 400
+    print(
+        f"[WEBHOOK] Accepted message to={to_addr} from={data.get('from', 'unknown')} "
+        f"known_address={redis_client.hexists(ADDRESSES_KEY, to_addr)}"
+    )
     socketio.start_background_task(
         store_message, to_addr, data.get("from", "unknown"),
         data.get("subject", ""), data.get("raw", data.get("text", ""))
