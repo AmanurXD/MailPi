@@ -23,10 +23,13 @@ app = Flask(__name__)
 # --- Configuration ---
 REDIS_URL = os.environ.get("UPSTASH_REDIS_URL")
 REDIS_TOKEN = os.environ.get("UPSTASH_REDIS_TOKEN")
-SUBDOMAIN = os.environ.get("SUBDOMAIN", "codewithjames.top")
+SUBDOMAIN = os.environ.get("SUBDOMAIN", "pawclaw.top")
 ADDRESS_TTL_DAYS = 14
 API_KEY = os.environ.get("API_KEY")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", f"https://{SUBDOMAIN}")
+SITE_TITLE = os.environ.get("SITE_TITLE", "MailPi")
+WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET")
 
 # --- Redis Connection ---
 redis_client = None
@@ -105,8 +108,8 @@ Output:
                 "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                 "Content-Type": "application/json",
                 # Recommended by OpenRouter for identifying your app
-                "HTTP-Referer": "https://mailpi-1z5b.onrender.com", 
-                "X-Title": "MailPi API"
+                "HTTP-Referer": APP_PUBLIC_URL,
+                "X-Title": SITE_TITLE
             },
             json={
                 "model": "meta-llama/llama-3.3-8b-instruct:free", # Using the correct, tested model name
@@ -271,10 +274,17 @@ app.register_blueprint(api_v1)
 # --- WEBHOOK & FRONTEND ROUTES ---
 @app.route("/", methods=["GET"])
 def home():
-    return render_template("index.html")
+    return render_template(
+        "index.html",
+        site_title=SITE_TITLE,
+        current_domain=SUBDOMAIN,
+        frontend_api_key=API_KEY or "",
+    )
 
 @app.route("/webhook", methods=["POST"])
 def api_webhook():
+    if WEBHOOK_SECRET and request.headers.get("X-Webhook-Secret") != WEBHOOK_SECRET:
+        return jsonify({"error": "Unauthorized."}), 401
     data = request.get_json(force=True, silent=True)
     if not data: return jsonify({"error": "No JSON received"}), 400
     to_addr = data.get("to")
@@ -303,3 +313,10 @@ def add_security_headers(response):
     response.headers['Pragma'] = 'no-cache'
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     return response
+
+@app.route("/healthz", methods=["GET"])
+def healthcheck():
+    return jsonify({"status": "ok"}), 200
+
+if __name__ == "__main__":
+    socketio.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))

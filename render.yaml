@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: mailpi
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --worker-class eventlet -w 1 app:app
+    autoDeployTrigger: commit
+    healthCheckPath: /healthz
+    domains:
+      - pawclaw.top
+    envVars:
+      - key: SUBDOMAIN
+        value: pawclaw.top
+      - key: APP_PUBLIC_URL
+        value: https://pawclaw.top
+      - key: SITE_TITLE
+        value: MailPi
+      - key: API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: UPSTASH_REDIS_URL
+        sync: false
+      - key: UPSTASH_REDIS_TOKEN
+        sync: false
+      - key: WEBHOOK_SECRET
+        sync: false
