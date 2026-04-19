@@ -108,7 +108,8 @@ Typical setup:
 ### 4. Cloudflare Worker
 
 - The Worker source is in `cloudflare-worker/src/index.js`.
-- Create a Worker in Cloudflare or deploy with Wrangler using `cloudflare-worker/wrangler.jsonc.example`.
+- This repo now includes a root `wrangler.jsonc` so Cloudflare Git deploys can detect the Worker entry point automatically.
+- If you prefer deploying from the subfolder manually, use `cloudflare-worker/wrangler.jsonc.example` as the template.
 - Add Worker secrets:
   - `MAILPI_WEBHOOK_URL=https://pawclaw.top/webhook`
   - `MAILPI_WEBHOOK_SECRET=<same value as WEBHOOK_SECRET on Render>`
@@ -139,6 +140,7 @@ Catch-all is the closest match to how this disposable system used to feel. The a
 ## Files added for the hosted setup
 
 - `render.yaml` for Render service bootstrap
+- `wrangler.jsonc` for Cloudflare Worker git deploys from the repo root
 - `cloudflare-worker/src/index.js` for inbound email delivery to MailPi
 - `cloudflare-worker/wrangler.jsonc.example` for Worker deployment
 - `cloudflare-worker/.dev.vars.example` for local Worker testing

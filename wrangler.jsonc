@@ -1,0 +1,6 @@
+{
+  "name": "mailpi-email-router",
+  "main": "cloudflare-worker/src/index.js",
+  "compatibility_date": "2026-04-19",
+  "workers_dev": true
+}
