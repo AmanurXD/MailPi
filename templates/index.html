@@ -23,7 +23,7 @@
         
         <header class="mb-8 text-center">
             <h1 class="text-4xl font-extrabold text-blue-400">{{ site_title }}</h1>
-            <p class="text-gray-500 mt-1">Disposable inboxes for {{ current_domain }}.</p>
+            <p class="text-gray-500 mt-1">Mailbox API and inboxes for {{ current_domain }}.</p>
         </header>
 
         <div class="bg-gray-800 p-4 rounded-lg shadow-xl mb-6 flex flex-wrap items-center space-y-4 md:space-y-0 md:space-x-4">
@@ -63,7 +63,7 @@
                 <template x-for="item in history" :key="item.address">
                     <li @click="loadFromHistory(item.address)" :class="{'bg-gray-700': item.address === currentAddress}" class="p-2 rounded-md hover:bg-gray-600 cursor-pointer transition duration-150 flex justify-between items-center text-sm font-mono">
                         <span x-text="item.address"></span>
-                        <span class="text-xs text-gray-400" x-text="'Expires: ' + new Date(item.expires_at).toLocaleDateString()"></span>
+                        <span class="text-xs text-gray-400" x-text="item.never_expires ? 'Permanent' : ('Expires: ' + new Date(item.expires_at).toLocaleDateString())"></span>
                     </li>
                 </template>
                 <p x-show="!history.length" class="text-gray-500 italic">No history yet. Generate an address!</p>
