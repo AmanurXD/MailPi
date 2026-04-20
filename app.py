@@ -9,7 +9,6 @@ import os
 import json
 import re
 import secrets
-import requests
 from datetime import datetime, timedelta
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, Blueprint
@@ -17,6 +16,7 @@ from flask_socketio import SocketIO, join_room
 from mailparser import MailParser
 from redis import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
+from otp import extract_verification_codes
 
 app = Flask(__name__)
 
@@ -27,7 +27,6 @@ SUBDOMAIN = os.environ.get("SUBDOMAIN", "pawclaw.top")
 ADDRESS_TTL_DAYS = os.environ.get("ADDRESS_TTL_DAYS")
 MAX_MESSAGES_PER_ADDRESS = int(os.environ.get("MAX_MESSAGES_PER_ADDRESS", "250"))
 API_KEY = os.environ.get("API_KEY")
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", f"https://{SUBDOMAIN}")
 SITE_TITLE = os.environ.get("SITE_TITLE", "MailPi")
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET")
@@ -305,102 +304,6 @@ def delete_all_messages(email):
     deleted_count = redis_client.llen(messages_key(email))
     redis_client.delete(messages_key(email))
     return deleted_count
-
-
-
-
-def _parse_ai_json_response(response_text):
-    """
-    A robust helper to find and parse a JSON object from a messy AI string.
-    """
-    try:
-        # The most reliable way: find the first '{' and the last '}'
-        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-        if json_match:
-            json_string = json_match.group(0)
-            return json.loads(json_string)
-        else:
-            # If no JSON object is found at all
-            print("[AI_WARN] No JSON object found in the AI response.")
-            return None
-    except json.JSONDecodeError:
-        print(f"[AI_ERROR] Could not decode the JSON from the AI response: {response_text}")
-        return None
-
-def extract_details_with_ai(text_content):
-    """Uses OpenRouter to intelligently extract OTPs and returns them."""
-    if not OPENROUTER_API_KEY:
-        print("[AI_WARN] OPENROUTER_API_KEY not set. Skipping AI.")
-        return {"otp_digit": None, "otp_mix": None}
-
-    system_prompt = """You are an expert JSON-only data extraction tool. Analyze the user-provided email text.
-Your task is to find two types of codes:
-1. `otp_digit`: A numeric-only code, 4-8 digits long. IGNORE any dashes or spaces (e.g., "123-456" becomes "123456").
-2. `otp_mix`: An alphanumeric code, 5-8 characters long.
-
-Your response MUST be a single, valid JSON object and nothing else.
-- If a code is found, populate its key.
-- If a code is not found, its value MUST be null.
-- DO NOT extract common English words. A code must look like a code.
-- Do not add any explanation.
-
-Example:
-Input: "Your code is 123-456 and your ticket is ABC789."
-Output:
-{
-  "otp_digit": "123456",
-  "otp_mix": "ABC789"
-}"""
-
-    try:
-        response = requests.post(
-            url="https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-                # Recommended by OpenRouter for identifying your app
-                "HTTP-Referer": APP_PUBLIC_URL,
-                "X-Title": SITE_TITLE
-            },
-            json={
-                "model": "meta-llama/llama-3.3-8b-instruct:free", # Using the correct, tested model name
-                "response_format": {"type": "json_object"},
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": text_content[:4000]}
-                ]
-            },
-            timeout=20 # Increased timeout slightly for reliability
-        )
-        response.raise_for_status()
-        
-        # Get the raw text content from the AI
-        content_string = response.json()['choices'][0]['message']['content']
-        
-        # Use our NEW robust parser to safely extract the JSON
-        extracted_codes = _parse_ai_json_response(content_string)
-
-        if not extracted_codes:
-            # If parsing failed, we return nulls
-            return {"otp_digit": None, "otp_mix": None}
-
-        otp_digit = extracted_codes.get("otp_digit")
-        if otp_digit and isinstance(otp_digit, str):
-            otp_digit = re.sub(r'\D', '', otp_digit) # Clean any remaining non-digits
-
-        return {
-            "otp_digit": otp_digit or None,
-            "otp_mix": extracted_codes.get("otp_mix") or None
-        }
-    except Exception as e:
-        print(f"[AI_ERROR] An exception occurred during AI extraction: {e}")
-        return {"otp_digit": None, "otp_mix": None}
-
-
-
-
-
-
 def extract_links_with_regex(html_body, text_body):
     """A simple, fast regex-based function to ONLY extract links."""
     content = f"{html_body} {text_body}"
@@ -443,7 +346,7 @@ def store_message(to_address, from_addr, subject, raw):
         text_body, html_body = f"ERROR: {e}", f"<h1>Error parsing email: {e}</h1>"
     
     # --- HYBRID EXTRACTION ENGINE RUNS HERE, ONCE ---
-    ai_otps = extract_details_with_ai(text_body)
+    extracted_codes = extract_verification_codes(subject=subject, text_body=text_body, html_body=html_body)
     regex_links = extract_links_with_regex(html_body, text_body)
 
     message_id = f"{datetime.utcnow().timestamp()}-{secrets.token_hex(2)}"
@@ -458,8 +361,8 @@ def store_message(to_address, from_addr, subject, raw):
         "text_body": text_body,
         "links": regex_links,
         "attachments": attachments,
-        "otp_digit": ai_otps.get("otp_digit"),
-        "otp_mix": ai_otps.get("otp_mix"),
+        "otp_digit": extracted_codes.get("otp_digit"),
+        "otp_mix": extracted_codes.get("otp_mix"),
     }
     
     redis_client.lpush(messages_key(to_address), json.dumps(message_data))

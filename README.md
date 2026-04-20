@@ -39,6 +39,7 @@ If your provider sends `text` instead of `raw`, this app accepts that as a fallb
 - Purge all messages for a mailbox
 - Delete a mailbox and its messages
 - Extract OTPs and links from incoming emails
+- Use deterministic OTP extraction across subject, text, and HTML
 
 ## Services you need
 
@@ -58,13 +59,10 @@ Copy `.env.example` into your deployment platform and set:
 - `SUBDOMAIN=pawclaw.top`
 - `APP_PUBLIC_URL=https://mailpi-y86z.onrender.com`
 - `API_KEY`
-- `OPENROUTER_API_KEY` if you want AI OTP extraction
 - `SITE_TITLE`
 - `WEBHOOK_SECRET`
 - `ADDRESS_TTL_DAYS` if you want expiring addresses by default
 - `MAX_MESSAGES_PER_ADDRESS`
-
-`OPENROUTER_API_KEY` is optional. Without it, inboxes still work and the app simply skips AI code extraction.
 
 If `ADDRESS_TTL_DAYS` is not set, mailboxes are permanent by default.
 
